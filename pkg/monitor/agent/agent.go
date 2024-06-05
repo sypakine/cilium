@@ -13,6 +13,7 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/perf"
+	"github.com/cilium/ebpf/ringbuf"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 
@@ -64,8 +65,8 @@ type agent struct {
 	lock.Mutex
 	models.MonitorStatus
 
-	ctx              context.Context
-	perfReaderCancel context.CancelFunc
+	ctx          context.Context
+	readerCancel context.CancelFunc
 
 	// listeners are external cilium monitor clients which receive raw
 	// gob-encoded payloads
@@ -73,9 +74,16 @@ type agent struct {
 	// consumers are internal clients which receive decoded messages
 	consumers map[consumer.MonitorConsumer]struct{}
 
-	events        *ebpf.Map
+	events *ebpf.Map
+
+	enableRingBufferOutput bool
+
+	// common Reader interface?
 	monitorEvents *perf.Reader
+	ringEvents    *ringbuf.Reader
 }
+
+var _ Agent = (*agent)(nil)
 
 // newAgent starts a new monitor agent instance which distributes monitor events
 // to registered listeners. Once the datapath is set up, AttachToEventsMap needs
@@ -87,12 +95,13 @@ type agent struct {
 // goroutine and close all registered listeners.
 // Note that the perf buffer reader is started only when listeners are
 // connected.
-func newAgent(ctx context.Context) *agent {
+func newAgent(ctx context.Context, rb bool) *agent {
 	return &agent{
-		ctx:              ctx,
-		listeners:        make(map[listener.MonitorListener]struct{}),
-		consumers:        make(map[consumer.MonitorConsumer]struct{}),
-		perfReaderCancel: func() {}, // no-op to avoid doing null checks everywhere
+		ctx:                    ctx,
+		listeners:              make(map[listener.MonitorListener]struct{}),
+		consumers:              make(map[consumer.MonitorConsumer]struct{}),
+		readerCancel:           func() {}, // no-op to avoid doing null checks everywhere
+		enableRingBufferOutput: rb,
 	}
 }
 
@@ -123,7 +132,7 @@ func (a *agent) AttachToEventsMap(nPages int) error {
 
 	// start the perf reader if we already have subscribers
 	if a.hasSubscribersLocked() {
-		a.startPerfReaderLocked()
+		a.startReaderLocked()
 	}
 
 	return nil
@@ -192,21 +201,27 @@ func (a *agent) hasListeners() bool {
 	return len(a.listeners) != 0
 }
 
-// startPerfReaderLocked starts the perf reader. This should only be
+// startReaderLocked starts the perf reader. This should only be
 // called if there are no other readers already running.
 // The goroutine is spawned with a context derived from m.Context() and the
 // cancelFunc is assigned to perfReaderCancel. Note that cancelling m.Context()
 // (e.g. on program shutdown) will also cancel the derived context.
 // Note: it is critical to hold the lock for this operation.
-func (a *agent) startPerfReaderLocked() {
+func (a *agent) startReaderLocked() {
 	if a.events == nil {
+		log.Debug("events map is nil")
 		return // not attached to events map yet
 	}
 
-	a.perfReaderCancel() // don't leak any old readers, just in case.
-	perfEventReaderCtx, cancel := context.WithCancel(a.ctx)
-	a.perfReaderCancel = cancel
-	go a.handleEvents(perfEventReaderCtx)
+	a.readerCancel() // don't leak any old readers, just in case.
+	eventReaderCtx, cancel := context.WithCancel(a.ctx)
+	a.readerCancel = cancel
+
+	if a.enableRingBufferOutput {
+		go a.handleRingEvents(eventReaderCtx)
+	} else {
+		go a.handleEvents(eventReaderCtx)
+	}
 }
 
 // RegisterNewListener adds the new MonitorListener to the global list.
@@ -227,7 +242,7 @@ func (a *agent) RegisterNewListener(newListener listener.MonitorListener) {
 
 	// If this is the first listener, start the perf reader
 	if !a.hasSubscribersLocked() {
-		a.startPerfReaderLocked()
+		a.startReaderLocked()
 	}
 
 	version := newListener.Version()
@@ -270,7 +285,7 @@ func (a *agent) RemoveListener(ml listener.MonitorListener) {
 	// This guards against an older generation listener calling the
 	// current generation perfReaderCancel
 	if !a.hasSubscribersLocked() {
-		a.perfReaderCancel()
+		a.readerCancel()
 	}
 }
 
@@ -290,7 +305,7 @@ func (a *agent) RegisterNewConsumer(newConsumer consumer.MonitorConsumer) {
 	defer a.Unlock()
 
 	if !a.hasSubscribersLocked() {
-		a.startPerfReaderLocked()
+		a.startReaderLocked()
 	}
 	a.consumers[newConsumer] = struct{}{}
 }
@@ -307,7 +322,7 @@ func (a *agent) RemoveConsumer(mc consumer.MonitorConsumer) {
 
 	delete(a.consumers, mc)
 	if !a.hasSubscribersLocked() {
-		a.perfReaderCancel()
+		a.readerCancel()
 	}
 }
 
@@ -342,6 +357,7 @@ func (a *agent) handleEvents(stopCtx context.Context) {
 		case isCtxDone(stopCtx):
 			return
 		case err != nil:
+			scopedLog.WithError(err).Debug("error reading monitor events")
 			if perf.IsUnknownEvent(err) {
 				a.Lock()
 				a.MonitorStatus.Unknown++
@@ -356,6 +372,50 @@ func (a *agent) handleEvents(stopCtx context.Context) {
 		}
 
 		a.processPerfRecord(scopedLog, record)
+	}
+}
+
+func (a *agent) handleRingEvents(stopCtx context.Context) {
+	scopedLog := log.WithField(logfields.StartTime, time.Now())
+	scopedLog.Info("Beginning to read ringbug buffer")
+	defer scopedLog.Info("Stopped reading ringbuf buffer")
+
+	monitorEvents, err := ringbuf.NewReader(a.events)
+	if err != nil {
+		scopedLog.WithError(err).Fatal("Cannot initialise BPF ringbuf buffer sockets")
+	}
+	defer func() {
+		monitorEvents.Close()
+		a.Lock()
+		a.ringEvents = nil
+		a.Unlock()
+	}()
+
+	a.Lock()
+	a.ringEvents = monitorEvents
+	a.Unlock()
+
+	for !isCtxDone(stopCtx) {
+		record, err := monitorEvents.Read()
+		scopedLog.Debug("ringbuf output record observed")
+		switch {
+		case isCtxDone(stopCtx):
+			return
+		case err != nil:
+			if perf.IsUnknownEvent(err) {
+				a.Lock()
+				a.MonitorStatus.Unknown++
+				a.Unlock()
+			} else {
+				scopedLog.WithError(err).Warn("Error received while reading from ringbuf buffer")
+				if errors.Is(err, unix.EBADFD) {
+					return
+				}
+			}
+			continue
+		}
+
+		a.processRingRecord(scopedLog, record)
 	}
 }
 
@@ -384,6 +444,19 @@ func (a *agent) processPerfRecord(scopedLog *logrus.Entry, record perf.Record) {
 	}
 }
 
+// processPerfRecord processes a record from the datapath and sends it to any
+// registered subscribers
+func (a *agent) processRingRecord(_ *logrus.Entry, record ringbuf.Record) {
+	a.Lock()
+	defer a.Unlock()
+
+	a.notifyPerfEventLocked(record.RawSample, 0)
+	a.sendToListenersLocked(&payload.Payload{
+		Data: record.RawSample,
+		Type: payload.EventSample,
+	})
+}
+
 // State returns the current status of the monitor
 func (a *agent) State() *models.MonitorStatus {
 	if a == nil {
@@ -393,7 +466,7 @@ func (a *agent) State() *models.MonitorStatus {
 	a.Lock()
 	defer a.Unlock()
 
-	if a.monitorEvents == nil {
+	if a.ringEvents == nil && a.monitorEvents == nil {
 		return nil
 	}
 

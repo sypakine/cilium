@@ -97,7 +97,7 @@ send_trace_sock_notify4(struct __ctx_sock *ctx,
 		.ipv6		= 0,
 	};
 
-	ctx_event_output(ctx, &EVENTS_MAP, BPF_F_CURRENT_CPU, &msg, sizeof(msg));
+	ringbuf_output(&RINGBUF, &msg, sizeof(msg), 0);
 }
 
 static __always_inline void
@@ -122,7 +122,7 @@ send_trace_sock_notify6(struct __ctx_sock *ctx,
 	};
 	ipv6_addr_copy(&msg.dst_ip.ip6, dst_addr);
 
-	ctx_event_output(ctx, &EVENTS_MAP, BPF_F_CURRENT_CPU, &msg, sizeof(msg));
+	ringbuf_output(&RINGBUF, &msg, sizeof(msg), 0);
 }
 #else
 static __always_inline void

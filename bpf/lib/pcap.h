@@ -70,8 +70,7 @@ static __always_inline void cilium_capture(struct __ctx_buff *ctx,
 		},
 	};
 
-	ctx_event_output(ctx, &EVENTS_MAP, (cap_len << 32) | BPF_F_CURRENT_CPU,
-			 &msg, sizeof(msg));
+	ringbuf_output(&RINGBUF, &msg, sizeof(msg), 0);
 }
 
 static __always_inline void __cilium_capture_in(struct __ctx_buff *ctx,

@@ -67,7 +67,7 @@ func NewMonitorFilter(logger logrus.FieldLogger, monitorEventFilters []string) (
 // It returns true if an event is to be dropped, false otherwise.
 func (m *monitorFilter) OnMonitorEvent(ctx context.Context, event *observerTypes.MonitorEvent) (bool, error) {
 	switch payload := event.Payload.(type) {
-	case *observerTypes.PerfEvent:
+	case *observerTypes.BufferEvent:
 		if len(payload.Data) == 0 {
 			return true, errors.ErrEmptyData
 		}

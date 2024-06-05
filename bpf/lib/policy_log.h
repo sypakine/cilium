@@ -77,9 +77,7 @@ send_policy_verdict_notify(struct __ctx_buff *ctx, __u32 remote_label, __u16 dst
 		.auth_type      = auth_type,
 	};
 
-	ctx_event_output(ctx, &EVENTS_MAP,
-			 (cap_len << 32) | BPF_F_CURRENT_CPU,
-			 &msg, sizeof(msg));
+	ringbuf_output(&RINGBUF, &msg, sizeof(msg), 0);
 }
 #else
 static __always_inline void

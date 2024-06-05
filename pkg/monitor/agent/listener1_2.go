@@ -38,6 +38,7 @@ func newListenerv1_2(c net.Conn, queueSize int, cleanupFn func(listener.MonitorL
 func (ml *listenerv1_2) Enqueue(pl *payload.Payload) {
 	select {
 	case ml.queue <- pl:
+		log.WithField("type", pl.Type).Debug("queued message")
 	default:
 		log.Debug("Per listener queue is full, dropping message")
 	}
@@ -52,6 +53,7 @@ func (ml *listenerv1_2) drainQueue() {
 
 	enc := gob.NewEncoder(ml.conn)
 	for pl := range ml.queue {
+		log.WithField("type", pl.Type).Debug("dequeued message")
 		if err := pl.EncodeBinary(enc); err != nil {
 			switch {
 			case listener.IsDisconnected(err):

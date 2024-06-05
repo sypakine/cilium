@@ -14,4 +14,13 @@ struct {
 	__uint(max_entries, __NR_CPUS__);
 } EVENTS_MAP __section_maps_btf;
 
+// #ifdef ENABLE_RINGBUF
+
+struct {
+	__uint(type, BPF_MAP_TYPE_RINGBUF);
+	__uint(max_entries, 256 * 1024);
+} RINGBUF __section_maps_btf;
+
+// #endif /* ENABLE_RINGBUF */
+
 #endif /* __LIB_EVENTS_H_ */

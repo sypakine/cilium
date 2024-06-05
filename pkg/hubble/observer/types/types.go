@@ -45,11 +45,12 @@ type AgentEvent struct {
 	Message interface{}
 }
 
-// PerfEvent is a raw event obtained from a BPF perf ring buffer
-type PerfEvent struct {
-	// Data is the raw data payload of the perf event
+// BufferEvent is a raw event obtained from a BPF buffer (ringbuf or perf).
+type BufferEvent struct {
+	// Data is the raw data payload of the event
 	Data []byte
 	// CPU is the cpu number on which the perf event occurred
+	// For ringbuf events, this will always be 0
 	CPU int
 }
 

@@ -101,7 +101,7 @@ func (p *Parser) Decode(monitorEvent *observerTypes.MonitorEvent) (*v1.Event, er
 	}
 
 	switch payload := monitorEvent.Payload.(type) {
-	case *observerTypes.PerfEvent:
+	case *observerTypes.BufferEvent:
 		if len(payload.Data) == 0 {
 			return nil, errors.ErrEmptyData
 		}

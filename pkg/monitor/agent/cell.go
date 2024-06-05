@@ -14,6 +14,7 @@ import (
 	"github.com/cilium/cilium/pkg/defaults"
 	"github.com/cilium/cilium/pkg/hive/cell"
 	"github.com/cilium/cilium/pkg/maps/eventsmap"
+	"github.com/cilium/cilium/pkg/option"
 )
 
 // Cell provides the monitor agent, which monitors the cilium events perf event
@@ -55,7 +56,7 @@ type agentParams struct {
 
 func newMonitorAgent(params agentParams) Agent {
 	ctx, cancel := context.WithCancel(context.Background())
-	agent := newAgent(ctx)
+	agent := newAgent(ctx, option.Config.EnableRingBufferOutput)
 
 	params.Lifecycle.Append(cell.Hook{
 		OnStart: func(cell.HookContext) error {
@@ -80,13 +81,12 @@ func newMonitorAgent(params agentParams) Agent {
 					}
 				}
 
-				err = ServeMonitorAPI(ctx, agent, queueSize)
-				if err != nil {
+				if err := ServeMonitorAPI(ctx, agent, queueSize); err != nil {
 					log.WithError(err).Error("encountered error serving monitor agent API")
 					return fmt.Errorf("encountered error serving monitor agent API: %w", err)
 				}
 			}
-			return err
+			return nil
 		},
 		OnStop: func(cell.HookContext) error {
 			cancel()

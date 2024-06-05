@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/btf"
 	"github.com/sirupsen/logrus"
 
 	"github.com/cilium/cilium/api/v1/models"
@@ -164,6 +165,44 @@ func (m *Map) updateMetrics() {
 		return
 	}
 	metrics.UpdateMapCapacity(m.group, m.MaxEntries())
+}
+
+func WithMapKey(k MapKey, t btf.Type) func(m *Map) {
+	return func(m *Map) {
+		if m.spec == nil {
+			m.spec = &ebpf.MapSpec{}
+		}
+		m.spec.Key = t
+		m.spec.KeySize = uint32(reflect.TypeOf(k).Elem().Size())
+		m.key = k
+	}
+}
+
+func WithMapValue(v MapValue, t btf.Type) func(m *Map) {
+	return func(m *Map) {
+		if m.spec == nil {
+			m.spec = &ebpf.MapSpec{}
+		}
+		m.spec.Value = t
+		m.spec.ValueSize = uint32(reflect.TypeOf(v).Elem().Size())
+		m.value = v
+	}
+}
+
+func NewMapWithOptions(name string, mapType ebpf.MapType, maxEntries int, opts ...func(m *Map)) *Map {
+	m := &Map{
+		spec: &ebpf.MapSpec{
+			Type:       mapType,
+			Name:       path.Base(name),
+			MaxEntries: uint32(maxEntries),
+		},
+		name:  path.Base(name),
+		group: name,
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
 }
 
 // NewMap creates a new Map instance - object representing a BPF map

@@ -52,6 +52,7 @@
 #define ctx_set_tunnel_opt	skb_set_tunnel_opt
 
 #define ctx_event_output	skb_event_output
+#define ringbuf_output		ringbuf_output
 
 #define ctx_adjust_meta		({ -ENOTSUPP; })
 

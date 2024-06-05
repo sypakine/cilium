@@ -142,6 +142,7 @@ DEFINE_IPV6(HOST_IP, 0xbe, 0xef, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xa, 0x
 #define SRV6_STATE_MAP6 test_cilium_srv6_state6
 #define ENDPOINTS_MAP test_cilium_lxc
 #define EVENTS_MAP test_cilium_events
+#define RINGBUF test_cilium_ringbuf
 #define SIGNAL_MAP test_cilium_signals
 #define METRICS_MAP test_cilium_metrics
 #define POLICY_CALL_MAP test_cilium_policy

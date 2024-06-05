@@ -41,12 +41,10 @@ type eventsMap struct {
 
 // init creates the events map in the kernel.
 func (e *eventsMap) init(maxEntries int) error {
-	e.m = bpf.NewMap(MapName,
-		ebpf.PerfEventArray,
-		&Key{},
-		&Value{},
-		maxEntries,
-		0).
-		WithEvents(option.Config.GetEventBufferConfig(MapName))
+	e.m = bpf.NewMapWithOptions(
+		MapName,
+		ebpf.RingBuf,
+		256*1024,
+	).WithEvents(option.Config.GetEventBufferConfig(MapName))
 	return e.m.Create()
 }

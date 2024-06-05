@@ -123,7 +123,7 @@ func (c *consumer) NotifyPerfEvent(data []byte, cpu int) {
 		UUID:      uuid.New(),
 		Timestamp: time.Now(),
 		NodeName:  nodeTypes.GetAbsoluteNodeName(),
-		Payload: &observerTypes.PerfEvent{
+		Payload: &observerTypes.BufferEvent{
 			Data: data,
 			CPU:  cpu,
 		},

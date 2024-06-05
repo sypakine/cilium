@@ -59,6 +59,10 @@ static int BPF_FUNC_REMAP(skb_event_output, struct __sk_buff *skb, void *map,
 			  __u64 index, const void *data, __u32 size) =
 			 (void *)BPF_FUNC_perf_event_output;
 
+/* Ringbuf output for user space */
+static int BPF_FUNC_REMAP(ringbuf_output, void *ringbuf, void *data, __u64 size, __u64 flags) =
+			 (void *)BPF_FUNC_ringbuf_output; 
+
 /* Socket lookup, assign, release */
 static struct bpf_sock *BPF_FUNC(skc_lookup_tcp, struct __sk_buff *skb,
 				 struct bpf_sock_tuple *tuple, __u32 tuple_size,

@@ -1129,6 +1129,10 @@ func InitGlobalFlags(cmd *cobra.Command, vp *viper.Viper) {
 	flags.MarkHidden(option.MaxInternalTimerDelay)
 	option.BindEnv(vp, option.MaxInternalTimerDelay)
 
+	flags.Bool(option.EnableRingBufferOutput, true, "If set to true, the user-space notifcation is facilitated via ringbuf (rather than via perf events).")
+	flags.MarkHidden(option.EnableRingBufferOutput)
+	option.BindEnv(vp, option.EnableRingBufferOutput)
+
 	if err := vp.BindPFlags(flags); err != nil {
 		log.Fatalf("BindPFlags failed: %s", err)
 	}

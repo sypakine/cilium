@@ -1288,6 +1288,9 @@ const (
 
 	// EnableExternalWorkloads enables the support for external workloads.
 	EnableExternalWorkloads = "enable-external-workloads"
+
+	// EnableRingBufferOutput enables the use of ringbuf for user-space notification.
+	EnableRingBufferOutput = "enable-ringbuf-output"
 )
 
 const (
@@ -2447,6 +2450,9 @@ type DaemonConfig struct {
 
 	// ServiceNoBackendResponse determines how we handle traffic to a service with no backends.
 	ServiceNoBackendResponse string
+
+	// EnableRingBufferOutput enables the use of ringbuf for user-space notification.
+	EnableRingBufferOutput bool
 }
 
 var (
@@ -3591,6 +3597,9 @@ func (c *DaemonConfig) Populate(vp *viper.Viper) {
 	// To support K8s NetworkPolicy
 	c.EnableK8sNetworkPolicy = vp.GetBool(EnableK8sNetworkPolicy)
 	c.PolicyCIDRMatchMode = vp.GetStringSlice(PolicyCIDRMatchMode)
+
+	c.EnableRingBufferOutput = vp.GetBool(EnableRingBufferOutput)
+
 }
 
 func (c *DaemonConfig) populateDevices(vp *viper.Viper) {
