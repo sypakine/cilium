@@ -110,7 +110,7 @@ type endpointManager struct {
 type endpointDeleteFunc func(*endpoint.Endpoint, endpoint.DeleteConfig) []error
 
 // New creates a new endpointManager.
-func New(logger *slog.Logger, epSynchronizer EndpointResourceSynchronizer, lns *node.LocalNodeStore, health cell.Health, monitorAgent monitoragent.Agent) *endpointManager {
+func New(logger *slog.Logger, registry *metrics.Registry, epSynchronizer EndpointResourceSynchronizer, lns *node.LocalNodeStore, health cell.Health, monitorAgent monitoragent.Agent) *endpointManager {
 	mgr := endpointManager{
 		logger:                       logger,
 		health:                       health,
@@ -126,7 +126,7 @@ func New(logger *slog.Logger, epSynchronizer EndpointResourceSynchronizer, lns *
 		policyUpdateCallbackDetails:  newPolicyUpdateCallbackDetails(),
 	}
 	mgr.deleteEndpoint = mgr.removeEndpoint
-	mgr.policyMapPressure = newPolicyMapPressure(logger)
+	mgr.policyMapPressure = newPolicyMapPressure(logger, registry)
 	return &mgr
 }
 
@@ -582,7 +582,7 @@ func (mgr *endpointManager) RegenerateAllEndpoints(regenMetadata *regeneration.E
 	eps := mgr.GetEndpoints()
 	wg.Add(len(eps))
 
-	mgr.logger.Info("regenerating all endpoints", logfields.Reason, regenMetadata.Reason)
+	mgr.logger.Debug("regenerating all endpoints", logfields.Reason, regenMetadata.Reason)
 	for _, ep := range eps {
 		go func(ep *endpoint.Endpoint) {
 			<-ep.RegenerateIfAlive(regenMetadata)

@@ -22,7 +22,6 @@ import (
 	"github.com/cilium/hive/cell"
 	"github.com/cilium/hive/job"
 	"github.com/cilium/statedb"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
@@ -57,6 +56,7 @@ import (
 	"github.com/cilium/cilium/pkg/envoy"
 	"github.com/cilium/cilium/pkg/flowdebug"
 	"github.com/cilium/cilium/pkg/fqdn/bootstrap"
+	"github.com/cilium/cilium/pkg/fqdn/namemanager"
 	"github.com/cilium/cilium/pkg/health"
 	"github.com/cilium/cilium/pkg/hive"
 	"github.com/cilium/cilium/pkg/identity"
@@ -77,12 +77,12 @@ import (
 	"github.com/cilium/cilium/pkg/loadbalancer"
 	"github.com/cilium/cilium/pkg/loadbalancer/legacy/redirectpolicy"
 	"github.com/cilium/cilium/pkg/loadbalancer/legacy/service"
+	lbmap "github.com/cilium/cilium/pkg/loadbalancer/maps"
 	"github.com/cilium/cilium/pkg/loadinfo"
 	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/maglev"
 	"github.com/cilium/cilium/pkg/maps/ctmap"
-	"github.com/cilium/cilium/pkg/maps/lbmap"
 	"github.com/cilium/cilium/pkg/maps/nat"
 	"github.com/cilium/cilium/pkg/maps/neighborsmap"
 	"github.com/cilium/cilium/pkg/metrics"
@@ -119,13 +119,11 @@ const (
 )
 
 var (
-	log = logging.DefaultLogger.WithField(logfields.LogSubsys, daemonSubsys)
-
 	bootstrapTimestamp = time.Now()
 	bootstrapStats     = bootstrapStatistics{}
 )
 
-func InitGlobalFlags(cmd *cobra.Command, vp *viper.Viper) {
+func InitGlobalFlags(logger *slog.Logger, cmd *cobra.Command, vp *viper.Viper) {
 	flags := cmd.Flags()
 
 	// Validators
@@ -153,11 +151,11 @@ func InitGlobalFlags(cmd *cobra.Command, vp *viper.Viper) {
 	option.Config.BPFMapEventBuffersValidator = option.Validator(func(val string) (string, error) {
 		vals := strings.Split(val, "=")
 		if len(vals) != 2 {
-			return "", fmt.Errorf(`invalid bpf map event config: expecting "<map_name>=<enabled>,<max_size>,<ttl>" got %q`, val)
+			return "", fmt.Errorf(`invalid bpf map event config: expecting "<map_name>=<enabled>_<max_size>_<ttl>" got %q`, val)
 		}
 		_, err := option.ParseEventBufferTupleString(vals[1])
 		if err != nil {
-			return "", fmt.Errorf(`invalid bpf map event config: expecting "<map_name>=<enabled>,<max_size>,<ttl>" got %q`, val)
+			return "", err
 		}
 		return "", nil
 	})
@@ -239,10 +237,6 @@ func InitGlobalFlags(cmd *cobra.Command, vp *viper.Viper) {
 
 	flags.StringSlice(option.DebugVerbose, []string{}, "List of enabled verbose debug groups")
 	option.BindEnv(vp, option.DebugVerbose)
-
-	flags.Bool(option.EnableRuntimeDeviceDetection, true, "Enable runtime device detection and datapath reconfiguration (experimental)")
-	option.BindEnv(vp, option.EnableRuntimeDeviceDetection)
-	flags.MarkDeprecated(option.EnableRuntimeDeviceDetection, "Runtime device detection and datapath reconfiguration is now the default and only mode of operation")
 
 	flags.String(option.DatapathMode, defaults.DatapathMode,
 		fmt.Sprintf("Datapath mode name (%s, %s, %s)",
@@ -529,6 +523,7 @@ func InitGlobalFlags(cmd *cobra.Command, vp *viper.Viper) {
 	option.BindEnv(vp, option.EnableNodePort)
 
 	flags.Bool(option.EnableSVCSourceRangeCheck, true, "Enable check of service source ranges (currently, only for LoadBalancer)")
+	flags.MarkDeprecated(option.EnableSVCSourceRangeCheck, fmt.Sprintf("The flag will be removed in v1.19. The feature will be unconditionally enabled by enabling %s.", option.KubeProxyReplacement))
 	option.BindEnv(vp, option.EnableSVCSourceRangeCheck)
 
 	flags.String(option.AddressScopeMax, fmt.Sprintf("%d", defaults.AddressScopeMax), "Maximum local address scope for ipcache to consider host addresses")
@@ -550,24 +545,11 @@ func InitGlobalFlags(cmd *cobra.Command, vp *viper.Viper) {
 	flags.MarkHidden(option.CgroupPathMKE)
 	option.BindEnv(vp, option.CgroupPathMKE)
 
-	flags.String(option.NodePortMode, option.NodePortModeSNAT, "BPF NodePort mode (\"snat\", \"dsr\", \"hybrid\")")
-	flags.MarkHidden(option.NodePortMode)
-	option.BindEnv(vp, option.NodePortMode)
-
 	flags.String(option.NodePortAcceleration, option.NodePortAccelerationDisabled, fmt.Sprintf(
 		"BPF NodePort acceleration via XDP (\"%s\", \"%s\")",
 		option.NodePortAccelerationNative, option.NodePortAccelerationDisabled))
 	flags.MarkHidden(option.NodePortAcceleration)
 	option.BindEnv(vp, option.NodePortAcceleration)
-
-	flags.Bool(option.LoadBalancerModeAnnotation, false, "Enable service-level annotation for configuring BPF load balancing mode")
-	option.BindEnv(vp, option.LoadBalancerModeAnnotation)
-
-	flags.String(option.LoadBalancerMode, option.NodePortModeSNAT, "BPF load balancing mode (\"snat\", \"dsr\", \"hybrid\")")
-	option.BindEnv(vp, option.LoadBalancerMode)
-
-	flags.String(option.LoadBalancerDSRDispatch, option.DSRDispatchOption, "BPF load balancing DSR dispatch method (\"opt\", \"ipip\", \"geneve\")")
-	option.BindEnv(vp, option.LoadBalancerDSRDispatch)
 
 	flags.Bool(option.LoadBalancerNat46X64, false, "BPF load balancing support for NAT46 and NAT64")
 	flags.MarkHidden(option.LoadBalancerNat46X64)
@@ -636,8 +618,9 @@ func InitGlobalFlags(cmd *cobra.Command, vp *viper.Viper) {
 	flags.Bool(option.LogSystemLoadConfigName, false, "Enable periodic logging of system load")
 	option.BindEnv(vp, option.LogSystemLoadConfigName)
 
-	flags.String(option.LoopbackIPv4, defaults.LoopbackIPv4, "IPv4 address for service loopback SNAT")
-	option.BindEnv(vp, option.LoopbackIPv4)
+	flags.String(option.ServiceLoopbackIPv4, defaults.ServiceLoopbackIPv4, "IPv4 source address to use for SNAT "+
+		"when a Pod talks to itself over a Service.")
+	option.BindEnv(vp, option.ServiceLoopbackIPv4)
 
 	flags.Bool(option.EnableIPv4Masquerade, true, "Masquerade IPv4 traffic from endpoints leaving the host")
 	option.BindEnv(vp, option.EnableIPv4Masquerade)
@@ -872,7 +855,7 @@ func InitGlobalFlags(cmd *cobra.Command, vp *viper.Viper) {
 	flags.String(option.LocalRouterIPv6, "", "Link-local IPv6 used for Cilium's router devices")
 	option.BindEnv(vp, option.LocalRouterIPv6)
 
-	flags.Var(option.NewNamedMapOptions(option.BPFMapEventBuffers, &option.Config.BPFMapEventBuffers, option.Config.BPFMapEventBuffersValidator), option.BPFMapEventBuffers, "Configuration for BPF map event buffers: (example: --bpf-map-event-buffers cilium_ipcache=true,1024,1h)")
+	flags.Var(option.NewNamedMapOptions(option.BPFMapEventBuffers, &option.Config.BPFMapEventBuffers, option.Config.BPFMapEventBuffersValidator), option.BPFMapEventBuffers, "Configuration for BPF map event buffers: (example: --bpf-map-event-buffers cilium_ipcache_v2=enabled_1024_1h)")
 	flags.MarkHidden(option.BPFMapEventBuffers)
 
 	flags.Bool(option.EgressMultiHomeIPRuleCompat, false,
@@ -981,6 +964,7 @@ func InitGlobalFlags(cmd *cobra.Command, vp *viper.Viper) {
 	option.BindEnv(vp, option.NodeLabels)
 
 	flags.Bool(option.EnableInternalTrafficPolicy, defaults.EnableInternalTrafficPolicy, "Enable internal traffic policy")
+	flags.MarkDeprecated(option.EnableInternalTrafficPolicy, "The flag will be removed in v1.19. The feature will be unconditionally enabled by default.")
 	option.BindEnv(vp, option.EnableInternalTrafficPolicy)
 
 	flags.Bool(option.EnableNonDefaultDenyPolicies, defaults.EnableNonDefaultDenyPolicies, "Enable use of non-default-deny policies")
@@ -1002,7 +986,7 @@ func InitGlobalFlags(cmd *cobra.Command, vp *viper.Viper) {
 	option.BindEnv(vp, option.ConnectivityProbeFrequencyRatio)
 
 	if err := vp.BindPFlags(flags); err != nil {
-		log.Fatalf("BindPFlags failed: %s", err)
+		logging.Fatal(logger, "BindPFlags failed", logfields.Error, err)
 	}
 }
 
@@ -1044,36 +1028,36 @@ func initDaemonConfigAndLogging(vp *viper.Viper) {
 	option.Config.Populate(logging.DefaultSlogLogger, vp)
 
 	// add hooks after setting up metrics in the option.Config
-	logging.DefaultLogger.Hooks.Add(metrics.NewLoggingHook())
+	logging.AddHandlers(metrics.NewLoggingHook())
 
 	time.MaxInternalTimerDelay = vp.GetDuration(option.MaxInternalTimerDelay)
 }
 
-func initEnv(vp *viper.Viper) {
+func initEnv(logger *slog.Logger, vp *viper.Viper) {
 	bootstrapStats.earlyInit.Start()
 	defer bootstrapStats.earlyInit.End(true)
 
 	var debugDatapath bool
 
-	option.LogRegisteredOptions(vp, log)
+	option.LogRegisteredSlogOptions(vp, logger)
 
 	for _, grp := range option.Config.DebugVerbose {
 		switch grp {
 		case argDebugVerboseFlow:
-			log.Debugf("Enabling flow debug")
+			logger.Debug("Enabling flow debug")
 			flowdebug.Enable()
 		case argDebugVerboseKvstore:
 			kvstore.EnableTracing()
 		case argDebugVerboseEnvoy:
-			log.Debugf("Enabling Envoy tracing")
+			logger.Debug("Enabling Envoy tracing")
 			envoy.EnableTracing()
 		case argDebugVerboseDatapath:
-			log.Debugf("Enabling datapath debug messages")
+			logger.Debug("Enabling datapath debug messages")
 			debugDatapath = true
 		case argDebugVerbosePolicy:
 			option.Config.Opts.SetBool(option.DebugPolicy, true)
 		default:
-			log.Warningf("Unknown verbose debug group: %s", grp)
+			logger.Warn("Unknown verbose debug group", logfields.Group, grp)
 		}
 	}
 	// Enable policy debugging if debug is enabled.
@@ -1083,14 +1067,14 @@ func initEnv(vp *viper.Viper) {
 
 	common.RequireRootPrivilege("cilium-agent")
 
-	log.Info("     _ _ _")
-	log.Info(" ___|_| |_|_ _ _____")
-	log.Info("|  _| | | | | |     |")
-	log.Info("|___|_|_|_|___|_|_|_|")
-	log.Infof("Cilium %s", version.Version)
+	logger.Info("     _ _ _")
+	logger.Info(" ___|_| |_|_ _ _____")
+	logger.Info("|  _| | | | | |     |")
+	logger.Info("|___|_|_|_|___|_|_|_|")
+	logger.Info(fmt.Sprintf("Cilium %s", version.Version))
 
 	if option.Config.LogSystemLoadConfig {
-		loadinfo.StartBackgroundLogger()
+		loadinfo.StartBackgroundLogger(logging.DefaultSlogLogger)
 	}
 
 	if option.Config.PreAllocateMaps {
@@ -1100,87 +1084,105 @@ func initEnv(vp *viper.Viper) {
 		bpf.EnableMapDistributedLRU()
 	}
 
-	scopedLog := log.WithFields(logrus.Fields{
-		logfields.Path + ".RunDir": option.Config.RunDir,
-		logfields.Path + ".LibDir": option.Config.LibDir,
-	})
-
 	option.Config.BpfDir = filepath.Join(option.Config.LibDir, defaults.BpfDir)
-	scopedLog = scopedLog.WithField(logfields.Path+".BPFDir", defaults.BpfDir)
+	option.Config.StateDir = filepath.Join(option.Config.RunDir, defaults.StateDir)
+
+	scopedLog := logger.With(
+		logfields.RunDirectory, option.Config.RunDir,
+		logfields.LibDirectory, option.Config.LibDir,
+		logfields.BPFDirectory, option.Config.BpfDir,
+		logfields.StateDirectory, option.Config.StateDir,
+	)
+
 	if err := os.MkdirAll(option.Config.RunDir, defaults.RuntimePathRights); err != nil {
-		scopedLog.WithError(err).Fatal("Could not create runtime directory")
+		logging.Fatal(scopedLog, "Could not create runtime directory", logfields.Error, err)
 	}
 
 	if option.Config.RunDir != defaults.RuntimePath {
 		if err := os.MkdirAll(defaults.RuntimePath, defaults.RuntimePathRights); err != nil {
-			scopedLog.WithError(err).Fatal("Could not create default runtime directory")
+			logging.Fatal(scopedLog, "Could not create default runtime directory", logfields.Error, err)
 		}
 	}
 
-	option.Config.StateDir = filepath.Join(option.Config.RunDir, defaults.StateDir)
-	scopedLog = scopedLog.WithField(logfields.Path+".StateDir", option.Config.StateDir)
 	if err := os.MkdirAll(option.Config.StateDir, defaults.StateDirRights); err != nil {
-		scopedLog.WithError(err).Fatal("Could not create state directory")
+		logging.Fatal(scopedLog, "Could not create state directory", logfields.Error, err)
 	}
 
 	if err := os.MkdirAll(option.Config.LibDir, defaults.RuntimePathRights); err != nil {
-		scopedLog.WithError(err).Fatal("Could not create library directory")
+		logging.Fatal(scopedLog, "Could not create library directory", logfields.Error, err)
 	}
 	// Restore permissions of executable files
 	if err := restoreExecPermissions(option.Config.LibDir, `.*\.sh`); err != nil {
-		scopedLog.WithError(err).Fatal("Unable to restore agent asset permissions")
+		logging.Fatal(scopedLog, "Unable to restore agent asset permissions", logfields.Error, err)
 	}
 
 	// Creating Envoy sockets directory for cases which doesn't provide a volume mount
 	// (e.g. embedded Envoy, external workload in ClusterMesh scenario)
 	if err := os.MkdirAll(envoy.GetSocketDir(option.Config.RunDir), defaults.RuntimePathRights); err != nil {
-		scopedLog.WithError(err).Fatal("Could not create envoy sockets directory")
+		logging.Fatal(scopedLog, "Could not create envoy sockets directory", logfields.Error, err)
 	}
 
 	if option.Config.MaxControllerInterval < 0 {
-		scopedLog.Fatalf("Invalid %s value %d", option.MaxCtrlIntervalName, option.Config.MaxControllerInterval)
+		logging.Fatal(scopedLog, fmt.Sprintf("Invalid %s value %d", option.MaxCtrlIntervalName, option.Config.MaxControllerInterval))
 	}
 
 	// set rlimit Memlock to INFINITY before creating any bpf resources.
 	if err := rlimit.RemoveMemlock(); err != nil {
-		log.WithError(err).Fatal("unable to set memory resource limits")
+		logging.Fatal(scopedLog, "unable to set memory resource limits", logfields.Error, err)
 	}
 
 	globalsDir := option.Config.GetGlobalsDir()
 	if err := os.MkdirAll(globalsDir, defaults.StateDirRights); err != nil {
-		log.WithError(err).WithField(logfields.Path, globalsDir).Fatal("Could not create runtime directory")
+		logging.Fatal(scopedLog, "Could not create runtime directory",
+			logfields.Error, err,
+			logfields.Path, globalsDir,
+		)
 	}
 	if err := os.Chdir(option.Config.StateDir); err != nil {
-		log.WithError(err).WithField(logfields.Path, option.Config.StateDir).Fatal("Could not change to runtime directory")
+		logging.Fatal(scopedLog, "Could not change to runtime directory",
+			logfields.Error, err,
+			logfields.Path, option.Config.StateDir,
+		)
 	}
 	if _, err := os.Stat(option.Config.BpfDir); os.IsNotExist(err) {
-		log.WithError(err).Fatalf("BPF template directory: NOT OK. Please run 'make install-bpf'")
+		logging.Fatal(scopedLog, "BPF template directory: NOT OK. Please run 'make install-bpf'", logfields.Error, err)
 	}
 
-	if err := probes.CreateHeaderFiles(filepath.Join(option.Config.BpfDir, "include/bpf"), probes.ExecuteHeaderProbes(logging.DefaultSlogLogger)); err != nil {
-		log.WithError(err).Fatal("failed to create header files with feature macros")
+	if err := probes.CreateHeaderFiles(filepath.Join(option.Config.BpfDir, "include/bpf"), probes.ExecuteHeaderProbes(scopedLog)); err != nil {
+		logging.Fatal(scopedLog, "failed to create header files with feature macros", logfields.Error, err)
 	}
 
 	if err := pidfile.Write(defaults.PidFilePath); err != nil {
-		log.WithField(logfields.Path, defaults.PidFilePath).WithError(err).Fatal("Failed to create Pidfile")
+		logging.Fatal(scopedLog, "Failed to create Pidfile",
+			logfields.Error, err,
+			logfields.Path, defaults.PidFilePath,
+		)
 	}
 
 	option.Config.AllowLocalhost = strings.ToLower(option.Config.AllowLocalhost)
 	switch option.Config.AllowLocalhost {
 	case option.AllowLocalhostAlways, option.AllowLocalhostAuto, option.AllowLocalhostPolicy:
 	default:
-		log.Fatalf("Invalid setting for --allow-localhost, must be { %s, %s, %s }",
-			option.AllowLocalhostAuto, option.AllowLocalhostAlways, option.AllowLocalhostPolicy)
+		logging.Fatal(scopedLog, fmt.Sprintf("Invalid setting for --allow-localhost, must be { %s, %s, %s }",
+			option.AllowLocalhostAuto, option.AllowLocalhostAlways, option.AllowLocalhostPolicy))
 	}
 
-	scopedLog = log.WithField(logfields.Path, option.Config.SocketPath)
+	scopedLog = logger.With(logfields.Path, option.Config.SocketPath)
 	socketDir := path.Dir(option.Config.SocketPath)
 	if err := os.MkdirAll(socketDir, defaults.RuntimePathRights); err != nil {
-		scopedLog.WithError(err).Fatal("Cannot mkdir directory for cilium socket")
+		logging.Fatal(
+			scopedLog,
+			"Cannot mkdir directory for cilium socket",
+			logfields.Error, err,
+		)
 	}
 
 	if err := os.Remove(option.Config.SocketPath); !os.IsNotExist(err) && err != nil {
-		scopedLog.WithError(err).Fatal("Cannot remove existing Cilium sock")
+		logging.Fatal(
+			scopedLog,
+			"Cannot remove existing Cilium sock",
+			logfields.Error, err,
+		)
 	}
 
 	// The standard operation is to mount the BPF filesystem to the
@@ -1189,7 +1191,7 @@ func initEnv(vp *viper.Viper) {
 	// useful if the daemon is being round inside a namespace and the
 	// BPF filesystem is mapped into the slave namespace.
 	bpf.CheckOrMountFS(logging.DefaultSlogLogger, option.Config.BPFRoot)
-	cgroups.CheckOrMountCgrpFS(option.Config.CGroupRoot)
+	cgroups.CheckOrMountCgrpFS(logging.DefaultSlogLogger, option.Config.CGroupRoot)
 
 	option.Config.Opts.SetBool(option.Debug, debugDatapath)
 	option.Config.Opts.SetBool(option.DebugLB, debugDatapath)
@@ -1204,24 +1206,24 @@ func initEnv(vp *viper.Viper) {
 
 	monitorAggregationLevel, err := option.ParseMonitorAggregationLevel(option.Config.MonitorAggregation)
 	if err != nil {
-		log.WithError(err).Fatalf("Failed to parse %s", option.MonitorAggregationName)
+		logging.Fatal(logger, fmt.Sprintf("Failed to parse %s", option.MonitorAggregationName), logfields.Error, err)
 	}
 	option.Config.Opts.SetValidated(option.MonitorAggregation, monitorAggregationLevel)
 
 	policy.SetPolicyEnabled(option.Config.EnablePolicy)
 	if option.Config.PolicyAuditMode {
-		log.Warningf("%s is enabled. Network policy will not be enforced.", option.PolicyAuditMode)
+		logger.Warn(fmt.Sprintf("%s is enabled. Network policy will not be enforced.", option.PolicyAuditMode))
 	}
 
 	if err := identity.AddUserDefinedNumericIdentitySet(option.Config.FixedIdentityMapping); err != nil {
-		log.WithError(err).Fatal("Invalid fixed identities provided")
+		logging.Fatal(logger, "Invalid fixed identities provided", logfields.Error, err)
 	}
 
 	if !option.Config.EnableIPv4 && !option.Config.EnableIPv6 {
-		log.Fatal("Either IPv4 or IPv6 addressing must be enabled")
+		logging.Fatal(logger, "Either IPv4 or IPv6 addressing must be enabled")
 	}
 	if err := labelsfilter.ParseLabelPrefixCfg(logging.DefaultSlogLogger, option.Config.Labels, option.Config.NodeLabels, option.Config.LabelPrefixFile); err != nil {
-		log.WithError(err).Fatal("Unable to parse Label prefix configuration")
+		logging.Fatal(logger, "Unable to parse Label prefix configuration", logfields.Error, err)
 	}
 
 	switch option.Config.DatapathMode {
@@ -1233,34 +1235,30 @@ func initEnv(vp *viper.Viper) {
 		// not make any sense whatsoever.
 		option.Config.EnableTCX = true
 		if err := probes.HaveNetkit(); err != nil {
-			log.Fatal("netkit devices need kernel 6.7.0 or newer and CONFIG_NETKIT")
+			logging.Fatal(logger, "netkit devices need kernel 6.7.0 or newer and CONFIG_NETKIT")
 		}
 	default:
-		log.WithField(logfields.DatapathMode, option.Config.DatapathMode).Fatal("Invalid datapath mode")
+		logging.Fatal(logger, "Invalid datapath mode", logfields.DatapathMode, option.Config.DatapathMode)
 	}
 
 	if option.Config.EnableL7Proxy && !option.Config.InstallIptRules {
-		log.Fatal("L7 proxy requires iptables rules (--install-iptables-rules=\"true\")")
+		logging.Fatal(logger, "L7 proxy requires iptables rules (--install-iptables-rules=\"true\")")
 	}
 
 	if !option.Config.DNSProxyInsecureSkipTransparentModeCheck {
 		if option.Config.EnableIPSec && option.Config.EnableL7Proxy && !option.Config.DNSProxyEnableTransparentMode {
-			log.Fatal("IPSec requires DNS proxy transparent mode to be enabled (--dnsproxy-enable-transparent-mode=\"true\")")
+			logging.Fatal(logger, "IPSec requires DNS proxy transparent mode to be enabled (--dnsproxy-enable-transparent-mode=\"true\")")
 		}
-	}
-
-	if option.Config.EnableIPSec && !option.Config.EnableIPv4 {
-		log.Fatal("IPSec requires IPv4 addressing to be enabled (--enable-ipv4=\"true\")")
 	}
 
 	if option.Config.EnableIPSec && option.Config.TunnelingEnabled() {
 		if err := ipsec.ProbeXfrmStateOutputMask(); err != nil {
-			log.WithError(err).Fatal("IPSec with tunneling requires support for xfrm state output masks (Linux 4.19 or later).")
+			logging.Fatal(logger, "IPSec with tunneling requires support for xfrm state output masks (Linux 4.19 or later).", logfields.Error, err)
 		}
 	}
 
 	if option.Config.EnableIPSecEncryptedOverlay && !option.Config.EnableIPSec {
-		log.Warn("IPSec encrypted overlay is enabled but IPSec is not. Ignoring option.")
+		logger.Warn("IPSec encrypted overlay is enabled but IPSec is not. Ignoring option.")
 	}
 
 	// IPAMENI IPSec is configured from Reinitialize() to pull in devices
@@ -1273,28 +1271,28 @@ func initEnv(vp *viper.Viper) {
 		// bpf_host onto physical devices as chosen by configuration.
 		!option.Config.AreDevicesRequired() &&
 		option.Config.IPAM != ipamOption.IPAMENI {
-		link, err := linuxdatapath.NodeDeviceNameWithDefaultRoute(logging.DefaultSlogLogger)
+		link, err := linuxdatapath.NodeDeviceNameWithDefaultRoute(logger)
 		if err != nil {
-			log.WithError(err).Fatal("Ipsec default interface lookup failed, consider \"encrypt-interface\" to manually configure interface.")
+			logging.Fatal(logger, "Ipsec default interface lookup failed, consider \"encrypt-interface\" to manually configure interface.", logfields.Error, err)
 		}
 		option.Config.EncryptInterface = append(option.Config.EncryptInterface, link)
 	}
 
 	if option.Config.TunnelingEnabled() && option.Config.EnableAutoDirectRouting {
-		log.Fatalf("%s cannot be used with tunneling. Packets must be routed through the tunnel device.", option.EnableAutoDirectRoutingName)
+		logging.Fatal(logger, fmt.Sprintf("%s cannot be used with tunneling. Packets must be routed through the tunnel device.", option.EnableAutoDirectRoutingName))
 	}
 
-	initClockSourceOption()
+	initClockSourceOption(logger)
 
 	if option.Config.EnableSRv6 {
 		if !option.Config.EnableIPv6 {
-			log.Fatalf("SRv6 requires IPv6.")
+			logging.Fatal(logger, "SRv6 requires IPv6.")
 		}
 	}
 
 	if option.Config.EnableHostFirewall {
 		if option.Config.EnableIPSec {
-			log.Fatal("IPSec cannot be used with the host firewall.")
+			logging.Fatal(logger, "IPSec cannot be used with the host firewall.")
 		}
 	}
 
@@ -1311,51 +1309,51 @@ func initEnv(vp *viper.Viper) {
 	}
 
 	if option.Config.EnableBPFTProxy {
-		if probes.HaveProgramHelper(logging.DefaultSlogLogger, ebpf.SchedCLS, asm.FnSkAssign) != nil {
+		if probes.HaveProgramHelper(logger, ebpf.SchedCLS, asm.FnSkAssign) != nil {
 			option.Config.EnableBPFTProxy = false
-			log.Info("Disabled support for BPF TProxy due to missing kernel support for socket assign (Linux 5.7 or later)")
+			logger.Info("Disabled support for BPF TProxy due to missing kernel support for socket assign (Linux 5.7 or later)")
 		}
 	}
 
 	if option.Config.LocalRouterIPv4 != "" || option.Config.LocalRouterIPv6 != "" {
 		// TODO(weil0ng): add a proper check for ipam in PR# 15429.
 		if option.Config.TunnelingEnabled() {
-			log.Fatalf("Cannot specify %s or %s in tunnel mode.", option.LocalRouterIPv4, option.LocalRouterIPv6)
+			logging.Fatal(logger, fmt.Sprintf("Cannot specify %s or %s in tunnel mode.", option.LocalRouterIPv4, option.LocalRouterIPv6))
 		}
 		if !option.Config.EnableEndpointRoutes {
-			log.Fatalf("Cannot specify %s or %s  without %s.", option.LocalRouterIPv4, option.LocalRouterIPv6, option.EnableEndpointRoutes)
+			logging.Fatal(logger, fmt.Sprintf("Cannot specify %s or %s  without %s.", option.LocalRouterIPv4, option.LocalRouterIPv6, option.EnableEndpointRoutes))
 		}
 		if option.Config.EnableIPSec {
-			log.Fatalf("Cannot specify %s or %s with %s.", option.LocalRouterIPv4, option.LocalRouterIPv6, option.EnableIPSecName)
+			logging.Fatal(logger, fmt.Sprintf("Cannot specify %s or %s with %s.", option.LocalRouterIPv4, option.LocalRouterIPv6, option.EnableIPSecName))
 		}
 	}
 
 	if option.Config.EnableEndpointRoutes && option.Config.EnableLocalNodeRoute {
 		option.Config.EnableLocalNodeRoute = false
-		log.Debugf(
-			"Auto-set %q to `false` because it is redundant to per-endpoint routes (%s=true)",
-			option.EnableLocalNodeRoute, option.EnableEndpointRoutes,
+		logger.Debug(
+			"Auto-set option to `false` because it is redundant to per-endpoint routes",
+			logfields.Option, option.EnableLocalNodeRoute,
+			option.EnableEndpointRoutes, true,
 		)
 	}
 
 	if option.Config.IPAM == ipamOption.IPAMAzure {
 		option.Config.EgressMultiHomeIPRuleCompat = true
-		log.WithFields(logrus.Fields{
-			"URL": "https://github.com/cilium/cilium/issues/14705",
-		}).Infof(
-			"Auto-set %q to `true` because the Azure datapath has not been migrated over to a new scheme. "+
+		logger.Info(
+			fmt.Sprintf("Auto-set %q to `true` because the Azure datapath has not been migrated over to a new scheme. "+
 				"A future version of Cilium will support a newer Azure datapath. "+
 				"Connectivity is not affected.",
-			option.EgressMultiHomeIPRuleCompat,
+				option.EgressMultiHomeIPRuleCompat),
+			logfields.URL, "https://github.com/cilium/cilium/issues/14705",
 		)
 	}
 
 	if option.Config.IPAM == ipamOption.IPAMENI && option.Config.TunnelingEnabled() {
-		log.Fatalf("Cannot specify IPAM mode %s in tunnel mode.", option.Config.IPAM)
+		logging.Fatal(logger, fmt.Sprintf("Cannot specify IPAM mode %s in tunnel mode.", option.Config.IPAM))
 	}
 
 	if option.Config.IPAM == ipamOption.IPAMMultiPool && option.Config.EnableIPSec && !option.Config.TunnelingEnabled() {
-		log.Fatalf("IPAM mode %s with %s is supported only in tunnel mode.", option.Config.IPAM, option.EnableIPSecName)
+		logging.Fatal(logger, fmt.Sprintf("IPAM mode %s with %s is supported only in tunnel mode.", option.Config.IPAM, option.EnableIPSecName))
 	}
 
 	if option.Config.InstallNoConntrackIptRules {
@@ -1363,14 +1361,14 @@ func initEnv(vp *viper.Viper) {
 		// routing mode as in tunneling mode the encapsulated traffic is
 		// already skipping netfilter conntrack.
 		if option.Config.TunnelingEnabled() {
-			log.Fatalf("%s requires the agent to run in direct routing mode.", option.InstallNoConntrackIptRules)
+			logging.Fatal(logger, fmt.Sprintf("%s requires the agent to run in direct routing mode.", option.InstallNoConntrackIptRules))
 		}
 
 		// Moreover InstallNoConntrackIptRules requires IPv4 support as
 		// the native routing CIDR, used to select all pod traffic, can
 		// only be an IPv4 CIDR at the moment.
 		if !option.Config.EnableIPv4 {
-			log.Fatalf("%s requires IPv4 support.", option.InstallNoConntrackIptRules)
+			logging.Fatal(logger, fmt.Sprintf("%s requires IPv4 support.", option.InstallNoConntrackIptRules))
 		}
 	}
 
@@ -1379,7 +1377,7 @@ func initEnv(vp *viper.Viper) {
 	if option.Config.BypassIPAvailabilityUponRestore {
 		switch option.Config.IPAMMode() {
 		case ipamOption.IPAMENI, ipamOption.IPAMAzure:
-			log.Info(
+			logger.Info(
 				"Running with bypass of IP not available errors upon endpoint " +
 					"restore. Be advised that this mode is intended to be " +
 					"temporary to ease upgrades. Consider restarting the pods " +
@@ -1387,12 +1385,14 @@ func initEnv(vp *viper.Viper) {
 			)
 		default:
 			option.Config.BypassIPAvailabilityUponRestore = false
-			log.Warnf(
-				"Bypassing IP allocation upon endpoint restore (%q) is enabled with"+
-					"unintended IPAM modes. This bypass is only intended "+
-					"to work for CRD-based IPAM modes such as ENI. Disabling "+
-					"bypass.",
-				option.BypassIPAvailabilityUponRestore,
+			logger.Warn(
+				fmt.Sprintf(
+					"Bypassing IP allocation upon endpoint restore (%q) is enabled with"+
+						"unintended IPAM modes. This bypass is only intended "+
+						"to work for CRD-based IPAM modes such as ENI. Disabling "+
+						"bypass.",
+					option.BypassIPAvailabilityUponRestore,
+				),
 			)
 		}
 	}
@@ -1430,10 +1430,12 @@ func (d *Daemon) initKVStore(resolver *dial.ServiceResolver) {
 		addrkey := fmt.Sprintf("%s.address", option.Config.KVStore)
 		addr := option.Config.KVStoreOpt[addrkey]
 
-		log.WithError(err).WithFields(logrus.Fields{
-			"kvstore": option.Config.KVStore,
-			"address": addr,
-		}).Fatal("Unable to setup kvstore")
+		logging.Fatal(d.logger,
+			"Unable to setup kvstore",
+			logfields.Error, err,
+			logfields.KVStore, option.Config.KVStore,
+			logfields.Address, addr,
+		)
 	}
 }
 
@@ -1462,6 +1464,7 @@ type daemonParams struct {
 	Logger              *slog.Logger
 	Lifecycle           cell.Lifecycle
 	Health              cell.Health
+	MetricsRegistry     *metrics.Registry
 	Clientset           k8sClient.Clientset
 	WGAgent             *wireguard.Agent
 	LocalNodeStore      *node.LocalNodeStore
@@ -1492,6 +1495,7 @@ type daemonParams struct {
 	MonitorAgent        monitorAgent.Agent
 	ServiceManager      service.ServiceManager
 	DB                  *statedb.DB
+	Namespaces          statedb.Table[agentK8s.Namespace]
 	Routes              statedb.Table[*datapathTables.Route]
 	Devices             statedb.Table[*datapathTables.Device]
 	NodeAddrs           statedb.Table[datapathTables.NodeAddress]
@@ -1519,6 +1523,7 @@ type daemonParams struct {
 	MaglevConfig        maglev.Config
 	LBConfig            loadbalancer.Config
 	DNSProxy            bootstrap.FQDNProxyBootstrapper
+	DNSNameManager      namemanager.NameManager
 }
 
 func newDaemonPromise(params daemonParams) (promise.Promise[*Daemon], legacy.DaemonInitialization) {
@@ -1550,11 +1555,11 @@ func newDaemonPromise(params daemonParams) (promise.Promise[*Daemon], legacy.Dae
 			daemon = d
 
 			if !option.Config.DryMode {
-				log.Info("Initializing daemon")
+				d.logger.Info("Initializing daemon")
 
 				// This validation needs to be done outside of the agent until
 				// datapath.NodeAddressing is used consistently across the code base.
-				log.Info("Validating configured node address ranges")
+				d.logger.Info("Validating configured node address ranges")
 				if err := node.ValidatePostInit(params.Logger); err != nil {
 					return fmt.Errorf("postinit failed: %w", err)
 				}
@@ -1582,7 +1587,7 @@ func newDaemonPromise(params daemonParams) (promise.Promise[*Daemon], legacy.Dae
 				go func() {
 					defer wg.Done()
 					if err := startDaemon(daemon, restoredEndpoints, cleaner, params); err != nil {
-						log.WithError(err).Error("Daemon start failed")
+						d.logger.Error("Daemon start failed", logfields.Error, err)
 						daemonResolver.Reject(err)
 					} else {
 						daemonResolver.Resolve(daemon)
@@ -1623,15 +1628,15 @@ func startDaemon(d *Daemon, restoredEndpoints *endpointRestoreState, cleaner *da
 
 	// After K8s caches have been synced, IPCache can start label injection.
 	// Ensure that the initial labels are injected before we regenerate endpoints
-	log.Debug("Waiting for initial IPCache revision")
+	d.logger.Debug("Waiting for initial IPCache revision")
 	if err := d.ipcache.WaitForRevision(d.ctx, 1); err != nil {
-		log.WithError(err).Error("Failed to wait for initial IPCache revision")
+		d.logger.Error("Failed to wait for initial IPCache revision", logfields.Error, err)
 	}
 
 	d.initRestore(restoredEndpoints, params.EndpointRegenerator)
 
 	bootstrapStats.enableConntrack.Start()
-	log.Info("Starting connection tracking garbage collector")
+	d.logger.Info("Starting connection tracking garbage collector")
 	params.CTNATMapGC.Enable()
 	params.CTNATMapGC.Observe4().Observe(d.ctx, ctmap.NatMapNext4, func(err error) {})
 	params.CTNATMapGC.Observe6().Observe(d.ctx, ctmap.NatMapNext6, func(err error) {})
@@ -1658,7 +1663,7 @@ func startDaemon(d *Daemon, restoredEndpoints *endpointRestoreState, cleaner *da
 			}
 
 			if err := params.WGAgent.RestoreFinished(d.clustermesh); err != nil {
-				log.WithError(err).Error("Failed to set up WireGuard peers")
+				d.logger.Error("Failed to set up WireGuard peers", logfields.Error, err)
 			}
 		}()
 	}
@@ -1666,7 +1671,7 @@ func startDaemon(d *Daemon, restoredEndpoints *endpointRestoreState, cleaner *da
 	if d.endpointManager.HostEndpointExists() {
 		d.endpointManager.InitHostEndpointLabels(d.ctx)
 	} else {
-		log.Info("Creating host endpoint")
+		d.logger.Info("Creating host endpoint")
 		if err := d.endpointCreator.AddHostEndpoint(d.ctx); err != nil {
 			return fmt.Errorf("unable to create host endpoint: %w", err)
 		}
@@ -1678,9 +1683,9 @@ func startDaemon(d *Daemon, restoredEndpoints *endpointRestoreState, cleaner *da
 			// allocated first. This happens earlier in the agent bootstrap.
 			if (option.Config.EnableIPv4 && len(node.GetIngressIPv4(params.Logger)) == 0) ||
 				(option.Config.EnableIPv6 && len(node.GetIngressIPv6(params.Logger)) == 0) {
-				log.Warn("Ingress IPs are not available, skipping creation of the Ingress Endpoint: Policy enforcement on Cilium Ingress will not work as expected.")
+				d.logger.Warn("Ingress IPs are not available, skipping creation of the Ingress Endpoint: Policy enforcement on Cilium Ingress will not work as expected.")
 			} else {
-				log.Info("Creating ingress endpoint")
+				d.logger.Info("Creating ingress endpoint")
 				err := d.endpointCreator.AddIngressEndpoint(d.ctx)
 				if err != nil {
 					return fmt.Errorf("unable to create ingress endpoint: %w", err)
@@ -1690,7 +1695,7 @@ func startDaemon(d *Daemon, restoredEndpoints *endpointRestoreState, cleaner *da
 	}
 
 	if option.Config.EnableIPMasqAgent {
-		ipmasqAgent, err := ipmasq.NewIPMasqAgent(option.Config.IPMasqAgentConfigPath)
+		ipmasqAgent, err := ipmasq.NewIPMasqAgent(logging.DefaultSlogLogger, d.metricsRegistry, option.Config.IPMasqAgentConfigPath)
 		if err != nil {
 			return fmt.Errorf("failed to create ipmasq agent: %w", err)
 		}
@@ -1705,11 +1710,13 @@ func startDaemon(d *Daemon, restoredEndpoints *endpointRestoreState, cleaner *da
 				return
 			}
 		}
-		params.DNSProxy.CompleteBootstrap()
 
-		ms := maps.NewMapSweeper(params.Logger, &EndpointMapManager{
-			EndpointManager: d.endpointManager,
-		}, d.bwManager, d.lbConfig)
+		ms := maps.NewMapSweeper(
+			logging.DefaultSlogLogger,
+			&EndpointMapManager{
+				logger:          d.logger,
+				EndpointManager: d.endpointManager,
+			}, d.bwManager, d.lbConfig)
 		ms.CollectStaleMapGarbage()
 		ms.RemoveDisabledMaps()
 
@@ -1725,7 +1732,8 @@ func startDaemon(d *Daemon, restoredEndpoints *endpointRestoreState, cleaner *da
 	// reasons as the API being served. We want to ensure that this migration
 	// logic runs before any endpoint creates.
 	if option.Config.IPAM == ipamOption.IPAMENI {
-		migrated, failed := linuxrouting.NewMigrator(params.Logger,
+		migrated, failed := linuxrouting.NewMigrator(
+			logging.DefaultSlogLogger,
 			&eni.InterfaceDB{Clientset: params.Clientset},
 		).MigrateENIDatapath(option.Config.EgressMultiHomeIPRuleCompat)
 		switch {
@@ -1733,14 +1741,18 @@ func startDaemon(d *Daemon, restoredEndpoints *endpointRestoreState, cleaner *da
 			// No need to handle this case specifically because it is handled
 			// in the call already.
 		case migrated >= 0 && failed > 0:
-			log.Errorf("Failed to migrate ENI datapath. "+
-				"%d endpoints were successfully migrated and %d failed to migrate completely. "+
-				"The original datapath is still in-place, however it is recommended to retry the migration.",
-				migrated, failed)
+			d.logger.Error(fmt.Sprintf(
+				"Failed to migrate ENI datapath. "+
+					"%d endpoints were successfully migrated and %d failed to migrate completely. "+
+					"The original datapath is still in-place, however it is recommended to retry the migration.",
+				migrated, failed),
+			)
 
 		case migrated >= 0 && failed == 0:
-			log.Infof("Migration of ENI datapath successful, %d endpoints were migrated and none failed.",
-				migrated)
+			d.logger.Info(fmt.Sprintf(
+				"Migration of ENI datapath successful, %d endpoints were migrated and none failed.",
+				migrated),
+			)
 		}
 	}
 
@@ -1753,7 +1765,7 @@ func startDaemon(d *Daemon, restoredEndpoints *endpointRestoreState, cleaner *da
 	bootstrapStats.healthCheck.End(true)
 
 	if err := d.monitorAgent.SendEvent(monitorAPI.MessageTypeAgent, monitorAPI.StartMessage(time.Now())); err != nil {
-		log.WithError(err).Warn("Failed to send agent start monitor message")
+		d.logger.Warn("Failed to send agent start monitor message", logfields.Error, err)
 	}
 
 	// Watches for node neighbors link updates.
@@ -1772,8 +1784,10 @@ func startDaemon(d *Daemon, restoredEndpoints *endpointRestoreState, cleaner *da
 		}
 	}
 
-	log.WithField("bootstrapTime", time.Since(bootstrapTimestamp)).
-		Info("Daemon initialization completed")
+	d.logger.Info(
+		"Daemon initialization completed",
+		logfields.BootstrapTime, time.Since(bootstrapTimestamp),
+	)
 
 	bootstrapStats.overall.End(true)
 	bootstrapStats.updateMetrics()
@@ -1823,12 +1837,15 @@ func registerEndpointStateResolver(lc cell.Lifecycle, daemonPromise promise.Prom
 	})
 }
 
-func initClockSourceOption() {
+func initClockSourceOption(logger *slog.Logger) {
 	option.Config.ClockSource = option.ClockSourceKtime
 	option.Config.KernelHz = 1 // Known invalid non-zero to avoid div by zero.
 	hz, err := probes.KernelHZ()
 	if err != nil {
-		log.WithError(err).Infof("Auto-disabling %q feature since KERNEL_HZ cannot be determined", option.EnableBPFClockProbe)
+		logger.Info(
+			fmt.Sprintf("Auto-disabling %q feature since KERNEL_HZ cannot be determined", option.EnableBPFClockProbe),
+			logfields.Error, err,
+		)
 		option.Config.EnableBPFClockProbe = false
 	} else {
 		option.Config.KernelHz = int(hz)
@@ -1839,7 +1856,10 @@ func initClockSourceOption() {
 		if err == nil && t > 0 {
 			option.Config.ClockSource = option.ClockSourceJiffies
 		} else {
-			log.WithError(err).Warningf("Auto-disabling %q feature since kernel doesn't expose jiffies", option.EnableBPFClockProbe)
+			logger.Warn(
+				fmt.Sprintf("Auto-disabling %q feature since kernel doesn't expose jiffies", option.EnableBPFClockProbe),
+				logfields.Error, err,
+			)
 			option.Config.EnableBPFClockProbe = false
 		}
 	}

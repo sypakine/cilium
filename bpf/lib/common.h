@@ -80,6 +80,11 @@ enum {
 
 typedef __u64 mac_t;
 
+union v4addr {
+	__be32 be32;
+	__u8 addr[4];
+};
+
 union v6addr {
 	struct {
 		__u32 p1;
@@ -401,6 +406,8 @@ struct egress_gw_policy_entry6 {
 	union v6addr egress_ip;
 	__u32 gateway_ip;
 	__u32 reserved[3]; /* reserved for future extension, e.g. v6 gateway_ip */
+	__u32 egress_ifindex;
+	__u32 reserved2; /* for even more future extension */
 };
 
 struct srv6_vrf_key4 {
@@ -506,6 +513,7 @@ enum {
 #define REASON_MISSED_CUSTOM_CALL	11
 #define REASON_DECRYPTING			12
 #define REASON_ENCRYPTING			13
+#define REASON_LB_REVNAT_DELETE		14
 
 /* Lookup scope for externalTrafficPolicy=Local */
 #define LB_LOOKUP_SCOPE_EXT	0
@@ -564,6 +572,11 @@ enum metric_dir {
  * encrypting a packet. The MSB invades the Kubernetes mark "space" which is
  * fine, as it's not used by K8s. See pkg/datapath/linux/linux_defaults/mark.go
  * for more details.
+ *
+ * NOTE: from v1.18 we reuse MARK_MAGIC_ENCRYPT for WireGuard-encrypted packets,
+ * but we still need this value to handle upgrades from v1.17.
+ *
+ * TODO: can be removed in v1.19 in favor of MARK_MAGIC_ENCRYPT.
  */
 #define MARK_MAGIC_WG_ENCRYPTED		0x1E00
 
@@ -805,11 +818,13 @@ struct ct_entry {
 	__u32 last_rx_report;
 };
 
+#define IPPROTO_ANY	0	/* For service lookup with ANY L4 protocol */
+
 struct lb6_key {
 	union v6addr address;	/* Service virtual IPv6 address */
 	__be16 dport;		/* L4 port filter, if unset, all ports apply */
 	__u16 backend_slot;	/* Backend iterator, 0 indicates the svc frontend */
-	__u8 proto;		/* L4 protocol, 0 indicates any protocol */
+	__u8 proto;		/* L4 protocol, or IPPROTO_ANY */
 	__u8 scope;		/* LB_LOOKUP_SCOPE_* for externalTrafficPolicy=Local */
 	__u8 pad[2];
 };
@@ -869,7 +884,7 @@ struct lb4_key {
 	__be32 address;		/* Service virtual IPv4 address */
 	__be16 dport;		/* L4 port filter, if unset, all ports apply */
 	__u16 backend_slot;	/* Backend iterator, 0 indicates the svc frontend */
-	__u8 proto;		/* L4 protocol, 0 indicates any protocol */
+	__u8 proto;		/* L4 protocol, or IPPROTO_ANY */
 	__u8 scope;		/* LB_LOOKUP_SCOPE_* for externalTrafficPolicy=Local */
 	__u8 pad[2];
 };

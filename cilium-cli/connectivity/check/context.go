@@ -31,7 +31,6 @@ import (
 	"github.com/cilium/cilium/cilium-cli/utils/features"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/lock"
-	"github.com/cilium/cilium/pkg/versioncheck"
 )
 
 const (
@@ -54,8 +53,10 @@ type ConnectivityTest struct {
 
 	CodeOwners *codeowners.Ruleset
 
-	// ClusterName is the identifier of the local cluster.
-	ClusterName string
+	// ClusterNameLocal is the identifier of the local cluster.
+	ClusterNameLocal string
+	// ClusterNameRemote is the identifier of the destination cluster.
+	ClusterNameRemote string
 
 	// Parameters to the test suite, specified by the CLI user.
 	params Parameters
@@ -72,6 +73,7 @@ type ConnectivityTest struct {
 	echoExternalPods     map[string]Pod
 	clientPods           map[string]Pod
 	clientCPPods         map[string]Pod
+	l7LBClientPods       map[string]Pod
 	perfClientPods       []Pod
 	perfServerPod        []Pod
 	perfProfilingPods    map[string]Pod
@@ -79,6 +81,7 @@ type ConnectivityTest struct {
 	echoServices         map[string]Service
 	echoExternalServices map[string]Service
 	ingressService       map[string]Service
+	l7LBService          map[string]Service
 	k8sService           Service
 	lrpClientPods        map[string]Pod
 	lrpBackendPods       map[string]Pod
@@ -226,6 +229,7 @@ func NewConnectivityTest(
 		echoExternalPods:         make(map[string]Pod),
 		clientPods:               make(map[string]Pod),
 		clientCPPods:             make(map[string]Pod),
+		l7LBClientPods:           make(map[string]Pod),
 		lrpClientPods:            make(map[string]Pod),
 		lrpBackendPods:           make(map[string]Pod),
 		perfProfilingPods:        make(map[string]Pod),
@@ -237,6 +241,7 @@ func NewConnectivityTest(
 		echoServices:             make(map[string]Service),
 		echoExternalServices:     make(map[string]Service),
 		ingressService:           make(map[string]Service),
+		l7LBService:              make(map[string]Service),
 		hostNetNSPodsByNode:      make(map[string]Pod),
 		secondaryNetworkNodeIPv4: make(map[string]string),
 		secondaryNetworkNodeIPv6: make(map[string]string),
@@ -540,7 +545,11 @@ func (ct *ConnectivityTest) report() error {
 			ct.Logf("Test [%s]:", t.Name())
 			for _, a := range t.failedActions() {
 				failedActions++
-				ct.Log("  ❌", a)
+				if a.failureMessage != "" {
+					ct.Logf("  🟥 %s: %s", a, a.failureMessage)
+				} else {
+					ct.Log("  ❌", a)
+				}
 				ct.LogOwners(a.Scenario())
 			}
 		}
@@ -1097,6 +1106,10 @@ func (ct *ConnectivityTest) ControlPlaneClientPods() map[string]Pod {
 	return ct.clientCPPods
 }
 
+func (ct *ConnectivityTest) L7LBClientPods() map[string]Pod {
+	return ct.l7LBClientPods
+}
+
 func (ct *ConnectivityTest) HostNetNSPodsByNode() map[string]Pod {
 	return ct.hostNetNSPodsByNode
 }
@@ -1171,6 +1184,10 @@ func (ct *ConnectivityTest) FRRPods() []Pod {
 
 func (ct *ConnectivityTest) IngressService() map[string]Service {
 	return ct.ingressService
+}
+
+func (ct *ConnectivityTest) L7LBService() map[string]Service {
+	return ct.l7LBService
 }
 
 func (ct *ConnectivityTest) K8sService() Service {
@@ -1286,16 +1303,6 @@ func (ct *ConnectivityTest) KillMulticastTestSender() []string {
 func (ct *ConnectivityTest) ForEachIPFamily(hasNetworkPolicies bool, do func(features.IPFamily)) {
 	ipFams := features.GetIPFamilies(ct.Params().IPFamilies)
 
-	// The per-endpoint routes feature is broken with IPv6 on < v1.14 when there
-	// are any netpols installed (https://github.com/cilium/cilium/issues/23852
-	// and https://github.com/cilium/cilium/issues/23910).
-	if f, ok := ct.Feature(features.EndpointRoutes); ok &&
-		f.Enabled && hasNetworkPolicies &&
-		versioncheck.MustCompile("<1.14.0")(ct.CiliumVersion) {
-
-		ipFams = []features.IPFamily{features.IPFamilyV4}
-	}
-
 	for _, ipFam := range ipFams {
 		switch ipFam {
 		case features.IPFamilyV4:
@@ -1334,4 +1341,13 @@ func (ct *ConnectivityTest) IsSocketLBFull() bool {
 		return !socketLBHostnsOnly
 	}
 	return false
+}
+
+func (ct *ConnectivityTest) GetPodHostIPByFamily(pod Pod, ipFam features.IPFamily) (string, error) {
+	for _, addr := range pod.Pod.Status.HostIPs {
+		if features.GetIPFamily(addr.IP) == ipFam {
+			return addr.IP, nil
+		}
+	}
+	return "", fmt.Errorf("pod doesn't have HostIP of family %s", ipFam)
 }

@@ -31,7 +31,6 @@
 #define mac_five_addr {0x15, 0x21, 0x39, 0x45, 0x4D, 0x5D}
 #define mac_six_addr {0x08, 0x14, 0x1C, 0x32, 0x52, 0x7E}
 #define mac_zero_addr {0x0, 0x0, 0x0, 0x0, 0x0, 0x0}
-#define mac_v6mcast_base_addr {0x33, 0x33, 0x00, 0x00, 0x00, 0x00}
 
 volatile const __u8 mac_one[] = mac_one_addr;
 volatile const __u8 mac_two[] = mac_two_addr;
@@ -40,7 +39,6 @@ volatile const __u8 mac_four[] = mac_four_addr;
 volatile const __u8 mac_five[] = mac_five_addr;
 volatile const __u8 mac_six[] = mac_six_addr;
 volatile const __u8 mac_zero[] = mac_zero_addr;
-volatile const __u8 mac_v6mcast_base[] = mac_v6mcast_base_addr;
 
 /* A collection of pre-defined IP addresses, so tests can reuse them without
  *  having to come up with custom ips.
@@ -68,11 +66,9 @@ volatile const __u8 mac_v6mcast_base[] = mac_v6mcast_base_addr;
 #define v4_pod_two	IPV4(192, 168, 0, 2)
 #define v4_pod_three	IPV4(192, 168, 0, 3)
 
-#define v4_all	IPV4(0, 0, 0, 0)
+#define v4_svc_loopback	IPV4(10, 245, 255, 31)
 
-/* IPv6 mcast base address */
-#define v6_mcast_base_addr {0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0xFF, 0, 0, 0};
-volatile const __u8 v6_mcast_base[] = v6_mcast_base_addr;
+#define v4_all	IPV4(0, 0, 0, 0)
 
 /* IPv6 addresses for pods in the cluster */
 #define v6_pod_one_addr {0xfd, 0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
@@ -648,6 +644,29 @@ pktgen__push_ipv4_packet(struct pktgen *builder,
 	return l3;
 }
 
+static __always_inline struct ipv6hdr *
+pktgen__push_ipv6_packet(struct pktgen *builder,
+			 __u8 *smac, __u8 *dmac,
+			 __u8 *saddr, __u8 *daddr)
+{
+	struct ethhdr *l2;
+	struct ipv6hdr *l3;
+
+	l2 = pktgen__push_ethhdr(builder);
+	if (!l2)
+		return NULL;
+
+	ethhdr__set_macs(l2, smac, dmac);
+
+	l3 = pktgen__push_default_ipv6hdr(builder);
+	if (!l3)
+		return NULL;
+
+	ipv6hdr__set_addrs(l3, saddr, daddr);
+
+	return l3;
+}
+
 static __always_inline struct tcphdr *
 pktgen__push_ipv4_tcp_packet(struct pktgen *builder,
 			     __u8 *smac, __u8 *dmac,
@@ -806,6 +825,22 @@ pktgen__push_ipv6_udp_packet(struct pktgen *builder,
 	l4->dest = dport;
 
 	return l4;
+}
+
+static __always_inline struct vxlanhdr *
+pktgen__push_ipv6_vxlan_packet(struct pktgen *builder,
+			       __u8 *smac, __u8 *dmac,
+			       __u8 *saddr, __u8 *daddr,
+			       __be16 sport, __be16 dport)
+{
+	struct udphdr *l4;
+
+	l4 = pktgen__push_ipv6_udp_packet(builder, smac, dmac, saddr, daddr,
+					  sport, dport);
+	if (!l4)
+		return NULL;
+
+	return pktgen__push_default_vxlanhdr(builder);
 }
 
 static __always_inline struct icmp6hdr *

@@ -1,3 +1,39 @@
+# v1.225.0 (2025-06-09)
+
+* **Feature**: Release to support Elastic VMware Service (Amazon EVS) Subnet and Amazon EVS Network Interface Types.
+
+# v1.224.1 (2025-06-06)
+
+* No change notes available for this release.
+
+# v1.224.0 (2025-05-28)
+
+* **Feature**: Enable the option to automatically delete underlying Amazon EBS snapshots when deregistering Amazon Machine Images (AMIs)
+
+# v1.223.0 (2025-05-27)
+
+* **Feature**: This release adds three features - option to store AWS Site-to-Site VPN pre-shared keys in AWS Secrets Manager, GetActiveVpnTunnelStatus API to check the in-use VPN algorithms, and SampleType option in GetVpnConnectionDeviceSampleConfiguration API to get recommended sample configs for VPN devices.
+
+# v1.222.0 (2025-05-23)
+
+* **Feature**: This release adds support for the C7i-flex, M7i-flex, I7i, I7ie, I8g, P6-b200, Trn2, C8gd, M8gd and R8gd instances
+
+# v1.221.0 (2025-05-21)
+
+* **Feature**: Release of Dualstack and Ipv6-only EC2 Public DNS hostnames
+
+# v1.220.0 (2025-05-20)
+
+* **Feature**: This release expands the ModifyInstanceMaintenanceOptions API to enable or disable instance migration during customer-initiated reboots for EC2 Scheduled Reboot Events.
+
+# v1.219.0 (2025-05-19)
+
+* **Feature**: This release includes new APIs for System Integrity Protection (SIP) configuration and automated root volume ownership delegation for EC2 Mac instances.
+
+# v1.218.0 (2025-05-12)
+
+* **Feature**: EC2 - Adding support for AvailabilityZoneId
+
 # v1.217.0 (2025-05-08)
 
 * **Feature**: Launching the feature to support ENA queues offering flexibility to support multiple queues per Enhanced Network Interface (ENI)

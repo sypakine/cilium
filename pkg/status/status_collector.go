@@ -28,7 +28,6 @@ import (
 	"github.com/cilium/cilium/pkg/lock"
 	ipcachemap "github.com/cilium/cilium/pkg/maps/ipcache"
 	ipmasqmap "github.com/cilium/cilium/pkg/maps/ipmasq"
-	"github.com/cilium/cilium/pkg/maps/lbmap"
 	"github.com/cilium/cilium/pkg/maps/lxcmap"
 	"github.com/cilium/cilium/pkg/maps/metricsmap"
 	"github.com/cilium/cilium/pkg/maps/ratelimitmap"
@@ -310,18 +309,18 @@ func (d *statusCollector) getKubeProxyReplacementStatus(ctx context.Context) *mo
 	}
 	if d.statusParams.DaemonConfig.EnableNodePort {
 		features.NodePort.Enabled = true
-		features.NodePort.Mode = strings.ToUpper(d.statusParams.DaemonConfig.NodePortMode)
-		switch d.statusParams.DaemonConfig.LoadBalancerDSRDispatch {
-		case option.DSRDispatchIPIP:
+		features.NodePort.Mode = strings.ToUpper(d.statusParams.LBConfig.LBMode)
+		switch d.statusParams.LBConfig.DSRDispatch {
+		case loadbalancer.DSRDispatchIPIP:
 			features.NodePort.DsrMode = models.KubeProxyReplacementFeaturesNodePortDsrModeIPIP
-		case option.DSRDispatchOption:
+		case loadbalancer.DSRDispatchOption:
 			features.NodePort.DsrMode = models.KubeProxyReplacementFeaturesNodePortDsrModeIPOptionExtension
-		case option.DSRDispatchGeneve:
+		case loadbalancer.DSRDispatchGeneve:
 			features.NodePort.DsrMode = models.KubeProxyReplacementFeaturesNodePortDsrModeGeneve
 		}
-		if d.statusParams.DaemonConfig.NodePortMode == option.NodePortModeHybrid {
+		if d.statusParams.LBConfig.LBMode == loadbalancer.LBModeHybrid {
 			//nolint:staticcheck
-			features.NodePort.Mode = strings.Title(d.statusParams.DaemonConfig.NodePortMode)
+			features.NodePort.Mode = strings.Title(d.statusParams.LBConfig.LBMode)
 		}
 		features.NodePort.Algorithm = models.KubeProxyReplacementFeaturesNodePortAlgorithmRandom
 		if d.statusParams.LBConfig.LBAlgorithm == loadbalancer.LBAlgorithmMaglev {
@@ -372,7 +371,7 @@ func (d *statusCollector) getKubeProxyReplacementStatus(ctx context.Context) *mo
 		if d.statusParams.LBConfig.AlgorithmAnnotation {
 			features.Annotations = append(features.Annotations, annotation.ServiceLoadBalancingAlgorithm)
 		}
-		if d.statusParams.DaemonConfig.LoadBalancerModeAnnotation {
+		if d.statusParams.LBConfig.LBModeAnnotation {
 			features.Annotations = append(features.Annotations, annotation.ServiceForwardingMode)
 		}
 		features.Annotations = append(features.Annotations, annotation.ServiceNodeExposure)
@@ -445,27 +444,27 @@ func (d *statusCollector) getBPFMapStatus() *models.BPFMapStatus {
 			},
 			{
 				Name: "IPv4 service", // cilium_lb4_services_v2
-				Size: int64(lbmap.ServiceMapMaxEntries),
+				Size: int64(d.statusParams.LBConfig.LBServiceMapEntries),
 			},
 			{
 				Name: "IPv6 service", // cilium_lb6_services_v2
-				Size: int64(lbmap.ServiceMapMaxEntries),
+				Size: int64(d.statusParams.LBConfig.LBServiceMapEntries),
 			},
 			{
 				Name: "IPv4 service backend", // cilium_lb4_backends_v2
-				Size: int64(lbmap.ServiceBackEndMapMaxEntries),
+				Size: int64(d.statusParams.LBConfig.LBBackendMapEntries),
 			},
 			{
 				Name: "IPv6 service backend", // cilium_lb6_backends_v2
-				Size: int64(lbmap.ServiceBackEndMapMaxEntries),
+				Size: int64(d.statusParams.LBConfig.LBBackendMapEntries),
 			},
 			{
 				Name: "IPv4 service reverse NAT", // cilium_lb4_reverse_nat
-				Size: int64(lbmap.RevNatMapMaxEntries),
+				Size: int64(d.statusParams.LBConfig.LBRevNatEntries),
 			},
 			{
 				Name: "IPv6 service reverse NAT", // cilium_lb6_reverse_nat
-				Size: int64(lbmap.RevNatMapMaxEntries),
+				Size: int64(d.statusParams.LBConfig.LBRevNatEntries),
 			},
 			{
 				Name: "Metrics",
@@ -493,7 +492,7 @@ func (d *statusCollector) getBPFMapStatus() *models.BPFMapStatus {
 			},
 			{
 				Name: "Session affinity",
-				Size: int64(lbmap.AffinityMapMaxEntries),
+				Size: int64(d.statusParams.LBConfig.LBAffinityMapEntries),
 			},
 			{
 				Name: "Sock reverse NAT",
@@ -877,6 +876,25 @@ func (d *statusCollector) getProbes() []Probe {
 				if status.Err == nil {
 					if s, ok := status.Data.(*models.HubbleStatus); ok {
 						d.statusResponse.Hubble = s
+					}
+				}
+			},
+		},
+		{
+			Name: "hubble-metrics",
+			Probe: func(ctx context.Context) (any, error) {
+				if d.statusParams.HubbleMetrics == nil {
+					return &models.HubbleMetricsStatus{State: models.HubbleMetricsStatusStateDisabled}, nil
+				}
+				return d.statusParams.HubbleMetrics.Status(), nil
+			},
+			OnStatusUpdate: func(status Status) {
+				d.statusCollectMutex.Lock()
+				defer d.statusCollectMutex.Unlock()
+
+				if status.Err == nil {
+					if s, ok := status.Data.(*models.HubbleMetricsStatus); ok {
+						d.statusResponse.HubbleMetrics = s
 					}
 				}
 			},

@@ -22,8 +22,6 @@ import (
 	"github.com/cilium/cilium/cilium-cli/internal/helm"
 	"github.com/cilium/cilium/cilium-cli/k8s"
 	"github.com/cilium/cilium/cilium-cli/utils/features"
-	"github.com/cilium/cilium/pkg/option"
-	"github.com/cilium/cilium/pkg/versioncheck"
 )
 
 func parseBoolStatus(s string) bool {
@@ -35,10 +33,25 @@ func parseBoolStatus(s string) bool {
 	return false
 }
 
+// DaemonConfigForFeatDetection is a minimal daemon config used for feature extraction.
+//
+// The struct is used to work around situations where we want to introduce a breaking
+// change to DaemonConfig. CLI is required to work with all stable Cilium versions. So,
+// the breaking change could break CLI for some versions.
+//
+// In any case, it is preferred to NOT do feature detection based on the runtime config,
+// as it was never meant to provide a stable "API".
+type DaemonConfigForFeatDetection struct {
+	MonitorAggregation               string
+	EnableICMPRules                  bool
+	EnableHealthChecking             bool
+	EnableEndpointHealthChecking     bool
+	EncryptNode                      bool
+	NodeEncryptionOptOutLabelsString string
+	EnableK8sNetworkPolicy           bool
+}
+
 // extractFeaturesFromRuntimeConfig extracts features from the Cilium runtime config.
-// The downside of this approach is that the `DaemonConfig` struct is not stable.
-// If there are changes to it in the future, we will likely have to maintain
-// version-specific copies of the struct in the Cilium-CLI.
 func (ct *ConnectivityTest) extractFeaturesFromRuntimeConfig(ctx context.Context, ciliumPod Pod, result features.Set) error {
 	namespace := ciliumPod.Pod.Namespace
 
@@ -48,7 +61,7 @@ func (ct *ConnectivityTest) extractFeaturesFromRuntimeConfig(ctx context.Context
 		return fmt.Errorf("failed to fetch cilium runtime config: %w", err)
 	}
 
-	cfg := &option.DaemonConfig{}
+	cfg := &DaemonConfigForFeatDetection{}
 	if err := json.Unmarshal(stdout.Bytes(), cfg); err != nil {
 		return fmt.Errorf("unmarshaling cilium runtime config json: %w", err)
 	}
@@ -71,13 +84,8 @@ func (ct *ConnectivityTest) extractFeaturesFromRuntimeConfig(ctx context.Context
 		Mode:    cfg.NodeEncryptionOptOutLabelsString,
 	}
 
-	isFeatureKNPEnabled, err := ct.isFeatureKNPEnabled(cfg.EnableK8sNetworkPolicy)
-	if err != nil {
-		return fmt.Errorf("unable to determine if KNP feature is enabled: %w", err)
-	}
-
 	result[features.KNP] = features.Status{
-		Enabled: isFeatureKNPEnabled,
+		Enabled: cfg.EnableK8sNetworkPolicy,
 	}
 
 	return nil
@@ -358,31 +366,21 @@ func (ct *ConnectivityTest) detectFeatures(ctx context.Context) error {
 		}
 	}
 
-	ct.ClusterName = cmp.Or(cm.Data["cluster-name"], "default")
+	ct.ClusterNameLocal = cmp.Or(cm.Data["cluster-name"], "default")
+	ct.ClusterNameRemote = ct.ClusterNameLocal
+	if ct.params.MultiCluster != "" {
+		cmDst, err := ct.clients.dst.GetConfigMap(ctx, ct.params.CiliumNamespace, defaults.ConfigMapName, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("unable to retrieve dst cluster ConfigMap %q: %w", defaults.ConfigMapName, err)
+		}
+		ct.ClusterNameRemote = cmp.Or(cmDst.Data["cluster-name"], "default")
+	}
 
 	return nil
 }
 
 func (ct *ConnectivityTest) ForceDisableFeature(feature features.Feature) {
 	ct.Features[feature] = features.Status{Enabled: false}
-}
-
-// isFeatureKNPEnabled checks if the Kubernetes Network Policy feature is enabled from the configuration.
-// Note that the flag appears in Cilium version 1.14, before that it was unable even thought KNPs were present.
-func (ct *ConnectivityTest) isFeatureKNPEnabled(enableK8SNetworkPolicy bool) (bool, error) {
-	switch {
-	case enableK8SNetworkPolicy:
-		// Flag is enabled, means the flag exists.
-		return true, nil
-	case !enableK8SNetworkPolicy && versioncheck.MustCompile("<1.14.0")(ct.CiliumVersion):
-		// Flag was always disabled even KNP were activated before Cilium 1.14.
-		return true, nil
-	case !enableK8SNetworkPolicy && versioncheck.MustCompile(">=1.14.0")(ct.CiliumVersion):
-		// Flag is explicitly set to disabled after Cilium 1.14.
-		return false, nil
-	default:
-		return false, fmt.Errorf("cilium version unsupported %s", ct.CiliumVersion.String())
-	}
 }
 
 func canNodeRunCilium(node *corev1.Node) bool {

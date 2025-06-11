@@ -7,13 +7,11 @@
 # Based on https://docs.cilium.io/en/stable/network/servicemesh/http/
 
 hive/start
-db/initialized
 
 # Add the service and endpoints
 k8s/add svc-ingress.yaml eps-ingress.yaml
 
 # Validate
-sleep 1s
 db/cmp services services.table
 db/cmp frontends frontends.table
 db/cmp backends backends.table

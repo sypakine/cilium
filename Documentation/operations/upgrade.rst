@@ -309,12 +309,16 @@ communicating via the proxy must reconnect to re-establish connections.
   exclude the ``io.cilium.k8s.policy.serviceaccount`` label.
 * If using IPsec encryption the upgrade from v1.17 to v1.18 requires special attention.
   Please reference :ref:`encryption_ipsec`.
+* If using an IPsec deployment within a Google Cloud GKE cluster the default firewall rules for the cluster's subnet
+  must be updated to allow ESP traffic.
+  See :ref:`encryption_ipsec` for details.
 * The Helm value of ``enableIPv4Masquerade`` in ``eni`` mode changes from ``true`` to ``false`` by default from 1.18.
   To keep the ``enableIPv4Masquerade`` enabled, explicitly set the value for
   this option to ``true``, or use a value strictly lower than 1.18 for
   ``upgradeCompatibility``.  
 * This Cilium version now requires a v5.10 Linux kernel or newer.
 * CiliumIdentity CRD does not contain Security Labels in metadata anymore except for the namespace label.
+* The support for Envoy Go Extensions (proxylib) is deprecated, and will be removed in a future release.
 
 Removed Options
 ~~~~~~~~~~~~~~~
@@ -330,6 +334,9 @@ Removed Options
 * The previously deprecated flag ``--enable-k8s-terminating-endpoint`` has been removed.
   The K8s terminating endpoints feature is unconditionally enabled.
 * The previously deprecated ``CONNTRACK_LOCAL`` option has been removed
+* The previously deprecated ``enableRuntimeDeviceDetection`` option has been removed
+* The previously deprecated and ignored operator flags ``ces-write-qps-limit``, ``ces-write-qps-burst``, ``ces-enable-dynamic-rate-limit``,
+  ``ces-dynamic-rate-limit-nodes``, ``ces-dynamic-rate-limit-qps-limit``, ``ces-dynamic-rate-limit-qps-burst`` have been removed.
 
 Deprecated Options
 ~~~~~~~~~~~~~~~~~~
@@ -349,11 +356,20 @@ Deprecated Options
   be removed in Cilium 1.19.
 * The flag ``--bpf-lb-proto-diff`` has been deprecated and will be removed in Cilium 1.19.
   Service protocol differentiation will be unconditionally enabled.
-* The flag ``--enable-recorder`` has been deprecated and will be removed in Cilium 1.19.
+* The flags ``--enable-recorder``, ``--enable-hubble-recorder-api``, ``--hubble-recorder-storage-path``
+  and ``--hubble-recorder-sink-queue-size`` have been deprecated. The Hubble Recorder feature will be
+  removed in Cilium 1.19.
   You can use `pwru <https://github.com/cilium/pwru>`_ with ``--filter-trace-xdp`` to trace XDP requests.
 * The flags ``--enable-node-port``, ``--enable-host-port``, ``--enable-external-ips`` have been deprecated
   and will be removed in Cilium 1.19. The kube-proxy replacement features will be only enabled when
-  ``--kube-proxy-replacent`` is set to ``true``. 
+  ``--kube-proxy-replacent`` is set to ``true``.
+* The flag ``--enable-k8s-endpoint-slice`` have been deprecated and will be removed in Cilium 1.19.
+  The K8s Endpoint Slice feature will be unconditionally enabled.
+* The flag ``--enable-internal-traffic-policy`` has been deprecated and will be removed in Cilium 1.19. The
+  ``internalTrafficPolicy`` field in a Kubernetes Service object will be unconditionally respected.
+* The flag ``--enable-svc-source-range-check`` (``svcSourceRangeCheck`` in Helm) has been deprecated
+  and will be removed in Cilium 1.19. The feature will be enabled automatically when ``--kube-proxy-replacent``
+  is set to ``true``.
 
 Helm Options
 ~~~~~~~~~~~~
@@ -377,6 +393,8 @@ Helm Options
 * The Helm option ``l2PodAnnouncements.interface`` has been deprecated in favor of ``l2PodAnnouncements.interfacePattern``
   and will be removed in Cilium 1.19.
 * The Helm value of ``enableIPv4Masquerade`` in ``eni`` mode changes from ``true`` to ``false`` by default from 1.18.
+* The Helm option ``clustermesh.apiserver.kvstoremesh.enabled`` has been deprecated and will be removed in Cilium 1.19.
+  Starting from 1.19 KVStoreMesh will be unconditionally enabled when the Cluster Mesh API Server is enabled.
 
 Agent Options
 ~~~~~~~~~~~~~
@@ -397,6 +415,11 @@ Added Metrics
 
 Removed Metrics
 ~~~~~~~~~~~~~~~
+
+The following deprecated metrics were removed:
+
+* ``node_connectivity_status``
+* ``node_connectivity_latency_seconds``
 
 Changed Metrics
 ~~~~~~~~~~~~~~~

@@ -99,6 +99,7 @@ O'Reilly
 PaaS
 Palantir
 Pepelnjak
+Perfdash
 Pfaff
 PodCIDR
 Polytechnique
@@ -123,6 +124,7 @@ Talos
 Telco
 Terraform
 Tierney
+ToR
 Triagers
 Twilio
 Uncompress
@@ -244,6 +246,7 @@ commonLabels
 compat
 config
 configMap
+configMapKey
 configSources
 configmap
 configs
@@ -373,6 +376,7 @@ goroutine
 goroutines
 grafana
 graphviz
+gsutil
 gve
 hairpinned
 hardcode
@@ -458,6 +462,7 @@ json
 k8sServiceHost
 k8sServiceLookupConfigMapName
 k8sServiceLookupNamespace
+kOps
 kTLS
 kafka
 kallsyms

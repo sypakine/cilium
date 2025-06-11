@@ -25,7 +25,7 @@ jobs:
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           # renovate: datasource=golang-version depName=go
-          go-version: 1.24.3
+          go-version: 1.24.4
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -44,7 +44,7 @@ jobs:
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           # renovate: datasource=golang-version depName=go
-          go-version: 1.24.3
+          go-version: 1.24.4
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -65,7 +65,7 @@ jobs:
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           # renovate: datasource=golang-version depName=go
-          go-version: 1.24.3
+          go-version: 1.24.4
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -86,13 +86,18 @@ jobs:
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           # renovate: datasource=golang-version depName=go
-          go-version: 1.24.3
+          go-version: 1.24.4
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           # hard-code the path instead of using ${{ github.repository }} to make sure it works for forked repo as well
           path: src/github.com/cilium/cilium
+      - name: Executables check
+        run: |
+          cd src/github.com/cilium/cilium
+          HELP="check permissions of files and allowlist them in contrib/executable_list.txt if you are adding a new executable"
+          make check-permissions || (echo $HELP; exit 1)
       - name: Go code prechecks
         run: |
           cd src/github.com/cilium/cilium
@@ -106,7 +111,7 @@ jobs:
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           # renovate: datasource=golang-version depName=go
-          go-version: 1.24.3
+          go-version: 1.24.4
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -129,7 +134,7 @@ jobs:
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           # renovate: datasource=golang-version depName=go
-          go-version: 1.24.3
+          go-version: 1.24.4
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:

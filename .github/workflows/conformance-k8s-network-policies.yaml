@@ -104,8 +104,12 @@ jobs:
             --set debug.verbose=envoy \
             --set-string=extraEnv[0].name=CILIUM_FEATURE_METRICS_WITH_DEFAULTS \
             --set-string=extraEnv[0].value=true \
-            --set-string=extraEnv[1].name=KUBE_CACHE_MUTATION_DETECTOR \
+            --set-string=extraEnv[1].name=CILIUM_INVALID_METRIC_VALUE_DETECTOR \
             --set-string=extraEnv[1].value=true \
+            --set-string=extraEnv[2].name=CILIUM_SLOG_DUP_ATTR_DETECTOR \
+            --set-string=extraEnv[2].value=true \
+            --set-string=extraEnv[3].name=KUBE_CACHE_MUTATION_DETECTOR \
+            --set-string=extraEnv[3].value=true \
             --set nodeinit.enabled=true \
             --set kubeProxyReplacement=false \
             --set socketLB.enabled=false \
@@ -142,7 +146,7 @@ jobs:
         run: ./test-cyclonus.sh
 
       - name: Install Cilium CLI
-        uses: cilium/cilium-cli@e7f03e4ec38a7008f4f5b9855ca9df721a9db185 # v0.18.3
+        uses: cilium/cilium-cli@6e65fa094c051aee03959dc9a75e66213e9050c7 # v0.18.4
         with:
           skip-build: ${{ env.CILIUM_CLI_SKIP_BUILD }}
           image-repo: ${{ env.CILIUM_CLI_IMAGE_REPO }}
@@ -150,30 +154,9 @@ jobs:
           repository: ${{ env.CILIUM_CLI_RELEASE_REPO }}
           release-version: ${{ env.CILIUM_CLI_VERSION }}
 
-      - name: Features tested
-        uses: ./.github/actions/feature-status
-        with:
-          title: "Summary of all features tested"
-          json-filename: "${{ env.job_name }}"
-
-      - name: Report cluster failure status and capture cilium-sysdump
-        if: ${{ failure() && steps.install-cilium.outcome != 'skipped' }}
-        run: |
-          echo "=== Retrieve cluster state ==="
-          kubectl get pods --all-namespaces -o wide
-          cilium status
-          cilium sysdump --output-filename cilium-sysdump-out
-
-      - name: Upload cilium-sysdump
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: ${{ failure() }}
-        with:
-          name: cilium-sysdump-out.zip
-          path: cilium-sysdump-out.zip
-
-      - name: Upload features tested
+      - name: Run common post steps
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: ./.github/actions/post-logic
         with:
-          name: features-tested
-          path: ${{ env.job_name }}*.json
+          artifacts_suffix: "${{ env.job_name }}"
+          job_status: "${{ job.status }}"

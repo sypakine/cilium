@@ -14,7 +14,6 @@ import (
 
 	"github.com/cilium/hive/cell"
 	"github.com/cilium/hive/hivetest"
-	"github.com/cilium/hive/job"
 	"github.com/google/go-cmp/cmp"
 	prometheustestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -28,7 +27,6 @@ import (
 	"github.com/cilium/cilium/operator/k8s"
 	cestest "github.com/cilium/cilium/operator/pkg/ciliumendpointslice/testutils"
 	"github.com/cilium/cilium/pkg/hive"
-	"github.com/cilium/cilium/pkg/hive/health/types"
 	capi_v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	capi_v2a1 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2alpha1"
 	k8sClient "github.com/cilium/cilium/pkg/k8s/client"
@@ -180,12 +178,6 @@ func initHiveTest(t *testing.T, operatorManagingCID bool) (*resource.Resource[*c
 				EnableCiliumEndpointSlice: true,
 				DisableNetworkPolicy:      false,
 			}
-		}),
-		cell.Provide(func(lc cell.Lifecycle, p types.Provider, jr job.Registry) job.Group {
-			h := p.ForModule(cell.FullModuleID{"test"})
-			jg := jr.NewGroup(h)
-			lc.Append(jg)
-			return jg
 		}),
 		cell.Invoke(func(p params) error {
 			registerController(p)

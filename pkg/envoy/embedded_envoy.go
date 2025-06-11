@@ -17,14 +17,14 @@ import (
 
 	"github.com/cilium/lumberjack/v2"
 	cilium "github.com/cilium/proxy/go/cilium/api"
-	envoy_config_bootstrap "github.com/cilium/proxy/go/envoy/config/bootstrap/v3"
-	envoy_config_cluster "github.com/cilium/proxy/go/envoy/config/cluster/v3"
-	envoy_config_core "github.com/cilium/proxy/go/envoy/config/core/v3"
-	envoy_config_endpoint "github.com/cilium/proxy/go/envoy/config/endpoint/v3"
-	envoy_config_overload "github.com/cilium/proxy/go/envoy/config/overload/v3"
-	envoy_extensions_bootstrap_internal_listener_v3 "github.com/cilium/proxy/go/envoy/extensions/bootstrap/internal_listener/v3"
-	envoy_extensions_resource_monitors_downstream_connections "github.com/cilium/proxy/go/envoy/extensions/resource_monitors/downstream_connections/v3"
-	envoy_config_upstream "github.com/cilium/proxy/go/envoy/extensions/upstreams/http/v3"
+	envoy_config_bootstrap "github.com/envoyproxy/go-control-plane/envoy/config/bootstrap/v3"
+	envoy_config_cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
+	envoy_config_core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	envoy_config_endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
+	envoy_config_overload "github.com/envoyproxy/go-control-plane/envoy/config/overload/v3"
+	envoy_extensions_bootstrap_internal_listener_v3 "github.com/envoyproxy/go-control-plane/envoy/extensions/bootstrap/internal_listener/v3"
+	envoy_extensions_resource_monitors_downstream_connections "github.com/envoyproxy/go-control-plane/envoy/extensions/resource_monitors/downstream_connections/v3"
+	envoy_config_upstream "github.com/envoyproxy/go-control-plane/envoy/extensions/upstreams/http/v3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -181,7 +181,7 @@ func (o *onDemandXdsStarter) startEmbeddedEnvoyInternal(config embeddedEnvoyConf
 		}
 		defer logWriter.Close()
 
-		envoyArgs := []string{"-l", mapLogLevel(logging.GetSlogLevel(logging.DefaultSlogLogger), config.defaultLogLevel), "-c", bootstrapFilePath, "--base-id", strconv.FormatUint(config.baseID, 10), "--log-format", logFormat}
+		envoyArgs := []string{"-l", mapLogLevel(logging.GetSlogLevel(o.logger), config.defaultLogLevel), "-c", bootstrapFilePath, "--base-id", strconv.FormatUint(config.baseID, 10), "--log-format", logFormat}
 		envoyStarterArgs := []string{}
 		if config.keepCapNetBindService {
 			envoyStarterArgs = append(envoyStarterArgs, "--keep-cap-net-bind-service", "--")

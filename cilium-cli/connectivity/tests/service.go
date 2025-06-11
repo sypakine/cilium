@@ -12,7 +12,6 @@ import (
 
 	"github.com/cilium/cilium/cilium-cli/connectivity/check"
 	"github.com/cilium/cilium/cilium-cli/utils/features"
-	"github.com/cilium/cilium/pkg/versioncheck"
 )
 
 // PodToService sends an HTTP request from all client Pods
@@ -243,13 +242,6 @@ func curlNodePort(ctx context.Context, s check.Scenario, t *check.Test,
 				}
 			}
 
-			//  Skip IPv6 requests when running on <1.14.0 Cilium with CNPs
-			if features.GetIPFamily(addr.Address) == features.IPFamilyV6 &&
-				versioncheck.MustCompile("<1.14.0")(t.Context().CiliumVersion) &&
-				t.HasNetworkPolicies() {
-				continue
-			}
-
 			// Manually construct an HTTP endpoint to override the destination IP
 			// and port of the request.
 			ep := check.HTTPEndpoint(name, fmt.Sprintf("%s://%s:%d%s", svc.Scheme(), addr.Address, np, svc.Path()))
@@ -338,5 +330,63 @@ func (s *outsideToIngressService) Run(ctx context.Context, t *check.Test) {
 			}
 		})
 		i++
+	}
+}
+
+// PodToL7Service sends an HTTP request from a given client Pods
+// to all L7 LB service in the test context.
+func PodToL7Service(name string, clients map[string]check.Pod, opts ...Option) check.Scenario {
+	options := &labelsOption{}
+	for _, opt := range opts {
+		opt(options)
+	}
+	return &podToL7Service{
+		ScenarioBase:      check.NewScenarioBase(),
+		name:              name,
+		clients:           clients,
+		sourceLabels:      options.sourceLabels,
+		destinationLabels: options.destinationLabels,
+	}
+}
+
+// podToL7Service implements a Scenario.
+type podToL7Service struct {
+	check.ScenarioBase
+
+	name              string
+	clients           map[string]check.Pod
+	sourceLabels      map[string]string
+	destinationLabels map[string]string
+}
+
+func (s *podToL7Service) Name() string {
+	if len(s.name) == 0 {
+		return "pod-to-l7-lb-service"
+	}
+	return fmt.Sprintf("pod-to-l7-lb-service-%s", s.name)
+}
+
+func (s *podToL7Service) Run(ctx context.Context, t *check.Test) {
+	var i int
+	ct := t.Context()
+
+	for _, pod := range s.clients {
+		if !hasAllLabels(pod, s.sourceLabels) {
+			continue
+		}
+
+		for _, svc := range ct.L7LBService() {
+			if !hasAllLabels(svc, s.destinationLabels) {
+				continue
+			}
+			t.NewAction(s, fmt.Sprintf("curl-%d", i), &pod, svc, features.IPFamilyAny).Run(func(a *check.Action) {
+				a.ExecInPod(ctx, a.CurlCommand(svc))
+				a.ValidateFlows(ctx, pod, a.GetEgressRequirements(check.FlowParameters{
+					DNSRequired: true,
+					AltDstPort:  svc.Port(),
+				}))
+			})
+			i++
+		}
 	}
 }

@@ -10,7 +10,6 @@ import (
 
 	"github.com/cilium/hive/cell"
 	"github.com/cilium/hive/hivetest"
-	"github.com/cilium/hive/job"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/goleak"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,7 +17,6 @@ import (
 	"github.com/cilium/cilium/operator/k8s"
 	tu "github.com/cilium/cilium/operator/pkg/ciliumendpointslice/testutils"
 	"github.com/cilium/cilium/pkg/hive"
-	"github.com/cilium/cilium/pkg/hive/health/types"
 	cilium_v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	cilium_v2a1 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2alpha1"
 	k8sClient "github.com/cilium/cilium/pkg/k8s/client"
@@ -48,12 +46,6 @@ func TestRegisterController(t *testing.T) {
 			return SharedConfig{
 				EnableCiliumEndpointSlice: true,
 			}
-		}),
-		cell.Provide(func(lc cell.Lifecycle, p types.Provider, jr job.Registry) job.Group {
-			h := p.ForModule(cell.FullModuleID{"test"})
-			jg := jr.NewGroup(h)
-			lc.Append(jg)
-			return jg
 		}),
 		metrics.Metric(NewMetrics),
 		cell.Invoke(func(p params) error {
@@ -107,12 +99,6 @@ func TestNotRegisterControllerWithCESDisabled(t *testing.T) {
 			return SharedConfig{
 				EnableCiliumEndpointSlice: false,
 			}
-		}),
-		cell.Provide(func(lc cell.Lifecycle, p types.Provider, jr job.Registry) job.Group {
-			h := p.ForModule(cell.FullModuleID{"test"})
-			jg := jr.NewGroup(h)
-			lc.Append(jg)
-			return jg
 		}),
 		metrics.Metric(NewMetrics),
 		cell.Invoke(func(p params) error {

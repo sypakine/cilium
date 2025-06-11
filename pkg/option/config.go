@@ -245,23 +245,9 @@ const (
 	// EnableSVCSourceRangeCheck enables check of service source range checks
 	EnableSVCSourceRangeCheck = "enable-svc-source-range-check"
 
-	// NodePortMode indicates in which mode NodePort implementation should run
-	// ("snat", "dsr" or "hybrid")
-	NodePortMode = "node-port-mode"
-
 	// NodePortAcceleration indicates whether NodePort should be accelerated
 	// via XDP ("none", "generic", "native", or "best-effort")
 	NodePortAcceleration = "node-port-acceleration"
-
-	// Alias to NodePortMode
-	LoadBalancerMode = "bpf-lb-mode"
-
-	// LoadBalancerModeAnnotation tells whether controller should check service
-	// level annotation for configuring bpf loadbalancing method (snat vs dsr).
-	LoadBalancerModeAnnotation = "bpf-lb-mode-annotation"
-
-	// Alias to DSR dispatch method
-	LoadBalancerDSRDispatch = "bpf-lb-dsr-dispatch"
 
 	// Alias to DSR/IPIP IPv4 source CIDR
 	LoadBalancerRSSv4CIDR = "bpf-lb-rss-ipv4-src-cidr"
@@ -833,8 +819,8 @@ const (
 	// EndpointRegenInterval is the interval of the periodic endpoint regeneration loop.
 	EndpointRegenInterval = "endpoint-regen-interval"
 
-	// LoopbackIPv4 is the address to use for service loopback SNAT
-	LoopbackIPv4 = "ipv4-service-loopback-address"
+	// ServiceLoopbackIPv4 is the address to use for service loopback SNAT
+	ServiceLoopbackIPv4 = "ipv4-service-loopback-address"
 
 	// LocalRouterIPv4 is the link-local IPv4 address to use for Cilium router device
 	LocalRouterIPv4 = "local-router-ipv4"
@@ -1035,10 +1021,6 @@ const (
 	// BGP router-id allocation IP pool
 	BGPRouterIDAllocationIPPool = "bgp-router-id-allocation-ip-pool"
 
-	// EnableRuntimeDeviceDetection is the name of the option to enable detection
-	// of new and removed datapath devices during the agent runtime.
-	EnableRuntimeDeviceDetection = "enable-runtime-device-detection"
-
 	// EnablePMTUDiscovery enables path MTU discovery to send ICMP
 	// fragmentation-needed replies to the client (when needed).
 	EnablePMTUDiscovery = "enable-pmtu-discovery"
@@ -1151,24 +1133,6 @@ const (
 )
 
 const (
-	// NodePortModeSNAT is for SNATing requests to remote nodes
-	NodePortModeSNAT = "snat"
-
-	// NodePortModeDSR is for performing DSR for requests to remote nodes
-	NodePortModeDSR = "dsr"
-
-	// NodePortModeHybrid is a dual mode of the above, that is, DSR for TCP and SNAT for UDP
-	NodePortModeHybrid = "hybrid"
-
-	// DSR dispatch mode to encode service into IP option or extension header
-	DSRDispatchOption = "opt"
-
-	// DSR dispatch mode to encapsulate to IPIP
-	DSRDispatchIPIP = "ipip"
-
-	// DSR dispatch mode to encapsulate to Geneve
-	DSRDispatchGeneve = "geneve"
-
 	// NodePortAccelerationDisabled means we do not accelerate NodePort via XDP
 	NodePortAccelerationDisabled = XDPModeDisabled
 
@@ -1303,11 +1267,6 @@ type DaemonConfig struct {
 	HostV6Addr         net.IP   // Host v6 address of the snooping device
 	EncryptInterface   []string // Set of network facing interface to encrypt over
 	EncryptNode        bool     // Set to true for encrypting node IP traffic
-
-	// If set to true the daemon will detect new and deleted datapath devices
-	// at runtime and reconfigure the datapath to load programs onto the new
-	// devices.
-	EnableRuntimeDeviceDetection bool
 
 	DatapathMode string // Datapath mode
 	RoutingMode  string // Routing mode
@@ -1778,8 +1737,8 @@ type DaemonConfig struct {
 	// the specified maximum value.
 	ConntrackGCMaxInterval time.Duration
 
-	// LoopbackIPv4 is the address to use for service loopback SNAT
-	LoopbackIPv4 string
+	// ServiceLoopbackIPv4 is the address to use for service loopback SNAT
+	ServiceLoopbackIPv4 string
 
 	// LocalRouterIPv4 is the link-local IPv4 address used for Cilium's router device
 	LocalRouterIPv4 string
@@ -1811,20 +1770,8 @@ type DaemonConfig struct {
 	// NodePortNat46X64 indicates whether NAT46 / NAT64 can be used.
 	NodePortNat46X64 bool
 
-	// NodePortMode indicates in which mode NodePort implementation should run
-	// ("snat", "dsr" or "hybrid")
-	NodePortMode string
-
-	// LoadBalancerModeAnnotation tells whether controller should check service
-	// level annotation for configuring bpf load balancing algorithm.
-	LoadBalancerModeAnnotation bool
-
 	// LoadBalancerIPIPSockMark enables sock-lb logic to force service traffic via IPIP
 	LoadBalancerIPIPSockMark bool
-
-	// LoadBalancerDSRDispatch indicates the method for pushing packets to
-	// backends under DSR ("opt" or "ipip")
-	LoadBalancerDSRDispatch string
 
 	// LoadBalancerRSSv4CIDR defines the outer source IPv4 prefix for DSR/IPIP
 	LoadBalancerRSSv4CIDR string
@@ -2183,7 +2130,7 @@ var (
 		FixedIdentityMapping:            make(map[string]string),
 		KVStoreOpt:                      make(map[string]string),
 		LogOpt:                          make(map[string]string),
-		LoopbackIPv4:                    defaults.LoopbackIPv4,
+		ServiceLoopbackIPv4:             defaults.ServiceLoopbackIPv4,
 		EnableEndpointRoutes:            defaults.EnableEndpointRoutes,
 		AnnotateK8sNode:                 defaults.AnnotateK8sNode,
 		K8sServiceCacheSize:             defaults.K8sServiceCacheSize,
@@ -2471,12 +2418,6 @@ func (c *DaemonConfig) DirectRoutingDeviceRequired() bool {
 	}
 
 	return c.EnableNodePort || BPFHostRoutingEnabled || Config.EnableWireguard
-}
-
-func (c *DaemonConfig) LoadBalancerUsesDSR() bool {
-	return c.NodePortMode == NodePortModeDSR ||
-		c.NodePortMode == NodePortModeHybrid ||
-		c.LoadBalancerModeAnnotation
 }
 
 // KVstoreEnabled returns whether Cilium is configured to connect to an external KVStore.
@@ -2835,7 +2776,7 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 	c.Labels = vp.GetStringSlice(Labels)
 	c.LibDir = vp.GetString(LibDir)
 	c.LogSystemLoadConfig = vp.GetBool(LogSystemLoadConfigName)
-	c.LoopbackIPv4 = vp.GetString(LoopbackIPv4)
+	c.ServiceLoopbackIPv4 = vp.GetString(ServiceLoopbackIPv4)
 	c.LocalRouterIPv4 = vp.GetString(LocalRouterIPv4)
 	c.LocalRouterIPv6 = vp.GetString(LocalRouterIPv6)
 	c.EnableBPFClockProbe = vp.GetBool(EnableBPFClockProbe)
@@ -2874,7 +2815,6 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 	c.EnableIPv4FragmentsTracking = vp.GetBool(EnableIPv4FragmentsTrackingName)
 	c.EnableIPv6FragmentsTracking = vp.GetBool(EnableIPv6FragmentsTrackingName)
 	c.FragmentsMapEntries = vp.GetInt(FragmentsMapEntriesName)
-	c.LoadBalancerDSRDispatch = vp.GetString(LoadBalancerDSRDispatch)
 	c.LoadBalancerRSSv4CIDR = vp.GetString(LoadBalancerRSSv4CIDR)
 	c.LoadBalancerRSSv6CIDR = vp.GetString(LoadBalancerRSSv6CIDR)
 	c.LoadBalancerIPIPSockMark = vp.GetBool(LoadBalancerIPIPSockMark)
@@ -2908,7 +2848,6 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 	}
 
 	c.populateLoadBalancerSettings(logger, vp)
-	c.EnableRuntimeDeviceDetection = vp.GetBool(EnableRuntimeDeviceDetection)
 	c.EgressMultiHomeIPRuleCompat = vp.GetBool(EgressMultiHomeIPRuleCompat)
 	c.InstallUplinkRoutesForDelegatedIPAM = vp.GetBool(InstallUplinkRoutesForDelegatedIPAM)
 
@@ -3251,8 +3190,6 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 
 func (c *DaemonConfig) populateLoadBalancerSettings(logger *slog.Logger, vp *viper.Viper) {
 	c.NodePortAcceleration = vp.GetString(LoadBalancerAcceleration)
-	c.NodePortMode = vp.GetString(LoadBalancerMode)
-	c.LoadBalancerModeAnnotation = vp.GetBool(LoadBalancerModeAnnotation)
 	// If old settings were explicitly set by the user, then have them
 	// override the new ones in order to not break existing setups.
 	if vp.IsSet(NodePortAcceleration) {
@@ -3261,14 +3198,6 @@ func (c *DaemonConfig) populateLoadBalancerSettings(logger *slog.Logger, vp *vip
 		if vp.IsSet(LoadBalancerAcceleration) && prior != c.NodePortAcceleration {
 			logging.Fatal(logger, fmt.Sprintf("Both --%s and --%s were set. Only use --%s instead.",
 				LoadBalancerAcceleration, NodePortAcceleration, LoadBalancerAcceleration))
-		}
-	}
-	if vp.IsSet(NodePortMode) {
-		prior := c.NodePortMode
-		c.NodePortMode = vp.GetString(NodePortMode)
-		if vp.IsSet(LoadBalancerMode) && prior != c.NodePortMode {
-			logging.Fatal(logger, fmt.Sprintf("Both --%s and --%s were set. Only use --%s instead.",
-				LoadBalancerMode, NodePortMode, LoadBalancerMode))
 		}
 	}
 }
@@ -3615,16 +3544,6 @@ func (c *DaemonConfig) validateVTEP(vp *viper.Viper) error {
 	return nil
 }
 
-// KubeProxyReplacementFullyEnabled returns true if Cilium is _effectively_
-// running in full KPR mode.
-func (c *DaemonConfig) KubeProxyReplacementFullyEnabled() bool {
-	return c.EnableHostPort &&
-		c.EnableNodePort &&
-		c.EnableExternalIPs &&
-		c.EnableSocketLB &&
-		c.EnableSessionAffinity
-}
-
 var backupFileNames []string = []string{
 	"agent-runtime-config.json",
 	"agent-runtime-config-1.json",
@@ -3937,14 +3856,14 @@ func (cs BPFEventBufferConfigs) get(name string) BPFEventBufferConfig {
 }
 
 // ParseEventBufferTupleString parses a event buffer configuration tuple string.
-// For example: true,100,24h
+// For example: enabled_100_24h
 // Which refers to enabled=true, maxSize=100, ttl=24hours.
 func ParseEventBufferTupleString(optsStr string) (BPFEventBufferConfig, error) {
-	opts := strings.Split(optsStr, ",")
+	opts := strings.Split(optsStr, "_")
 	enabled := false
 	conf := BPFEventBufferConfig{}
 	if len(opts) != 3 {
-		return conf, fmt.Errorf("unexpected event buffer config value format, should be in format 'mapname=enabled,100,24h'")
+		return conf, fmt.Errorf("unexpected event buffer config value format, should be in format 'mapname=enabled_100_24h'")
 	}
 
 	if opts[0] != "enabled" && opts[0] != "disabled" {
