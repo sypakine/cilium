@@ -563,8 +563,8 @@ func (legacy *legacyOnLeader) onStart(_ cell.HookContext) error {
 	// pods/delete is also up-to-date.
 	if !legacy.clientset.IsEnabled() {
 		legacy.logger.Info("KubeDNS unmanaged pods controller disabled due to kubernetes support not enabled")
-	} else if option.Config.DisableCiliumEndpointCRD {
-		legacy.logger.Info(fmt.Sprintf("KubeDNS unmanaged pods controller disabled as %q option is set to 'disabled' in Cilium ConfigMap", option.DisableCiliumEndpointCRDName))
+	// Removed 'else if option.Config.DisableCiliumEndpointCRD' block as the option is removed.
+	// The controller for unmanaged pods will start if k8s is enabled and UnmanagedPodWatcherInterval is not 0.
 	} else if operatorOption.Config.UnmanagedPodWatcherInterval != 0 {
 		legacy.wg.Add(1)
 		go func() {

@@ -32,7 +32,7 @@ type params struct {
 	Lifecycle cell.Lifecycle
 
 	NewClient           k8sClient.ClientBuilderFunc
-	CiliumEndpoint      resource.Resource[*v2.CiliumEndpoint]
+	// CiliumEndpoint resource.Resource[*v2.CiliumEndpoint] // Removed
 	CiliumEndpointSlice resource.Resource[*v2alpha1.CiliumEndpointSlice]
 	CiliumNodes         resource.Resource[*v2.CiliumNode]
 	Namespace           resource.Resource[*slim_corev1.Namespace]
@@ -51,8 +51,8 @@ type Controller struct {
 	contextCancel context.CancelFunc
 
 	// Cilium kubernetes clients to access V2 and V2alpha1 resources
-	clientset           k8sClient.Clientset
-	ciliumEndpoint      resource.Resource[*v2.CiliumEndpoint]
+	clientset k8sClient.Clientset
+	// ciliumEndpoint      resource.Resource[*v2.CiliumEndpoint] // Removed
 	ciliumEndpointSlice resource.Resource[*v2alpha1.CiliumEndpointSlice]
 	ciliumNodes         resource.Resource[*v2.CiliumNode]
 	namespace           resource.Resource[*slim_corev1.Namespace]
@@ -116,7 +116,7 @@ func registerController(p params) error {
 	cesController := &Controller{
 		logger:              p.Logger,
 		clientset:           clientset,
-		ciliumEndpoint:      p.CiliumEndpoint,
+		// ciliumEndpoint:      p.CiliumEndpoint, // Removed
 		ciliumEndpointSlice: p.CiliumEndpointSlice,
 		ciliumNodes:         p.CiliumNodes,
 		namespace:           p.Namespace,

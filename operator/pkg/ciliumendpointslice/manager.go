@@ -7,7 +7,10 @@ import (
 	"log/slog"
 
 	cilium_v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2alpha1"
+	core_v1 "k8s.io/api/core/v1" // Assuming this is the package for Pod type
 	"github.com/cilium/cilium/pkg/k8s/resource"
+	k8sUtils "github.com/cilium/cilium/pkg/k8s/utils" // Added for ValidIPs
+	"github.com/cilium/cilium/pkg/k8s/watchers"       // Assuming this is the package for K8sPodWatcher
 	"github.com/cilium/cilium/pkg/logging/logfields"
 )
 
@@ -19,12 +22,13 @@ var (
 
 // operations is an interface to all operations that a CES manager can perform.
 type operations interface {
-	// External APIs to Insert/Remove CEP in local dataStore
-	UpdateCEPMapping(cep *cilium_v2.CoreCiliumEndpoint, ns string) []CESKey
-	RemoveCEPMapping(cep *cilium_v2.CoreCiliumEndpoint, ns string) CESKey
+	// External APIs to handle pod events
+	handlePodAdd(pod *core_v1.Pod) []CESKey
+	handlePodUpdate(oldPod, newPod *core_v1.Pod) []CESKey
+	handlePodDelete(pod *core_v1.Pod) CESKey
 
 	initializeMappingForCES(ces *cilium_v2.CiliumEndpointSlice) CESName
-	initializeMappingCEPtoCES(cep *cilium_v2.CoreCiliumEndpoint, ns string, ces CESName)
+	// initializeMappingCEPtoCES is removed as it's CoreCiliumEndpoint specific
 
 	getCEPCountInCES(ces CESName) int
 	getCEPinCES(ces CESName) []CEPName
@@ -44,15 +48,19 @@ type cesManager struct {
 	// maxCEPsInCES is the maximum number of CiliumCoreEndpoint(s) packed in
 	// a CiliumEndpointSlice Resource.
 	maxCEPsInCES int
+
+	// podWatcher is used to receive pod updates.
+	podWatcher watchers.K8sPodWatcher // Placeholder type
 }
 
 // newCESManager creates and initializes a new FirstComeFirstServe based CES
 // manager, in this mode CEPs are batched based on FirstComeFirtServe algorithm.
-func newCESManager(maxCEPsInCES int, logger *slog.Logger) operations {
+func newCESManager(maxCEPsInCES int, logger *slog.Logger, podWatcher watchers.K8sPodWatcher) operations {
 	return &cesManager{
 		logger:       logger,
 		mapping:      newCESToCEPMapping(),
 		maxCEPsInCES: maxCEPsInCES,
+		podWatcher:   podWatcher,
 	}
 }
 
@@ -70,57 +78,6 @@ func (c *cesManager) createCES(name, ns string) CESName {
 	c.mapping.insertCES(cesName, ns)
 	c.logger.Debug("Generated CES", logfields.CESName, cesName)
 	return cesName
-}
-
-// UpdateCEPMapping is used to insert CEP in local cache, this may result in creating a new
-// CES object or updating an existing CES object.
-func (c *cesManager) UpdateCEPMapping(cep *cilium_v2.CoreCiliumEndpoint, ns string) []CESKey {
-	cepName := GetCEPNameFromCCEP(cep, ns)
-	c.logger.Debug("Insert CEP in local cache",
-		logfields.CEPName, cepName.string(),
-	)
-	// check the given cep is already exists in any of the CES.
-	// if yes, Update a ces with the given cep object.
-	cesName, exists := c.mapping.getCESName(cepName)
-	if exists {
-		c.logger.Debug("CEP already mapped to CES",
-			logfields.CEPName, cepName.string(),
-			logfields.CESName, cesName.string(),
-		)
-		return []CESKey{NewCESKey(cesName.string(), ns)}
-	}
-
-	// Get the largest available CES.
-	// This ensures the minimum number of CES updates, as the CESs will be
-	// consistently filled up in order.
-	cesName = c.getLargestAvailableCESForNamespace(ns)
-	if cesName == "" {
-		cesName = c.createCES("", ns)
-	}
-	c.mapping.insertCEP(cepName, cesName)
-	c.logger.Debug("CEP mapped to CES",
-		logfields.CEPName, cepName.string(),
-		logfields.CESName, cesName.string(),
-	)
-	return []CESKey{NewCESKey(cesName.string(), ns)}
-}
-
-func (c *cesManager) RemoveCEPMapping(cep *cilium_v2.CoreCiliumEndpoint, ns string) CESKey {
-	cepName := GetCEPNameFromCCEP(cep, ns)
-	c.logger.Debug("Removing CEP from local cache", logfields.CEPName, cepName.string())
-	cesName, exists := c.mapping.getCESName(cepName)
-	if exists {
-		c.logger.Debug("Removing CEP from CES",
-			logfields.CEPName, cepName.string(),
-			logfields.CESName, cesName.string(),
-		)
-		c.mapping.deleteCEP(cepName)
-		if c.mapping.countCEPsInCES(cesName) == 0 {
-			c.mapping.deleteCES(cesName)
-		}
-		return NewCESKey(cesName.string(), ns)
-	}
-	return CESKey(resource.Key{})
 }
 
 // getLargestAvailableCESForNamespace returns the largest CES from cache for the
@@ -142,14 +99,149 @@ func (c *cesManager) getLargestAvailableCESForNamespace(ns string) CESName {
 	return selectedCES
 }
 
+// handlePodAdd is called when a pod is added.
+func (c *cesManager) handlePodAdd(pod *core_v1.Pod) []CESKey {
+	// TODO: Implement logic to extract relevant information from the pod,
+	// convert it to a CEP-like structure if necessary, and then use logic
+	// similar to the old UpdateCEPMapping.
+	c.logger.Debug("Pod added, to be mapped to CES", "podName", pod.Name, "namespace", pod.Namespace)
+
+	// Placeholder: Derive a CEP name from the pod. This needs actual implementation.
+	// For now, let's assume a function GetCEPNameFromPod exists, or we use a simple name.
+	cepName := NewCEPName(pod.Name, pod.Namespace) // Use NewCEPName for consistency
+
+	// Extract PodCoreInfo
+	podIPs := k8sUtils.ValidIPs(pod.Status)
+	// DeepCopy labels to avoid issues if the original pod object's labels map is modified elsewhere.
+	podLabels := make(map[string]string)
+	if pod.ObjectMeta.Labels != nil {
+		for k, v := range pod.ObjectMeta.Labels {
+			podLabels[k] = v
+		}
+	}
+	podInfo := PodCoreInfo{
+		Name:      pod.Name,
+		Namespace: pod.Namespace,
+		IPs:       podIPs,
+		Labels:    podLabels,
+	}
+
+	// Check if this pod (as a CEP) is already mapped.
+	cesName, exists := c.mapping.getCESName(cepName)
+	if exists {
+		// Pod is already in a CES, update its info
+		c.logger.Debug("Pod (as CEP) already mapped to CES, updating info",
+			"podName", pod.Name,
+			"namespace", pod.Namespace,
+			logfields.CESName, cesName.string(),
+		)
+		// The existing CES assignment is maintained. We update the stored PodCoreInfo.
+		c.mapping.insertCEP(cepName, cesName, podInfo)
+		return []CESKey{NewCESKey(cesName.string(), pod.Namespace)}
+	}
+
+	// Get the largest available CES or create a new one for this new pod.
+	cesName = c.getLargestAvailableCESForNamespace(pod.Namespace)
+	if cesName == "" {
+		cesName = c.createCES("", pod.Namespace)
+	}
+	c.mapping.insertCEP(cepName, cesName, podInfo)
+	c.logger.Debug("Pod (as CEP) mapped to CES",
+		"podName", pod.Name,
+		"namespace", pod.Namespace,
+		"podIPs", podIPs,
+		logfields.CESName, cesName.string(),
+	)
+	return []CESKey{NewCESKey(cesName.string(), pod.Namespace)}
+}
+
+// handlePodUpdate is called when a pod is updated.
+func (c *cesManager) handlePodUpdate(oldPod, newPod *core_v1.Pod) []CESKey {
+	// TODO: Implement logic to determine if the update affects CES mapping.
+	// This might involve checking if relevant fields (IP, labels, etc.) have changed.
+	// If the mapping needs to change, it could be a remove and then add.
+	c.logger.Debug("Pod updated", "podName", newPod.Name, "namespace", newPod.Namespace)
+
+	// This is a simplified approach. A real implementation would need to compare
+	// oldPod and newPod to see if the change impacts CES assignment.
+	// For example, if a pod's IP changes or labels that affect its identity for CES.
+	// If identity changes, it might be a remove of old and add of new.
+	// If it's just metadata, it might not affect CES.
+
+	// For now, let's assume an update might mean re-evaluating its CES placement,
+	// by removing the old instance (if identifiable and different) and adding the new one.
+	// A more sophisticated approach would check if the CEPName derived from oldPod and newPod
+	// are different, or if other critical properties changed.
+
+	// Simplified: try to remove the old pod representation and then add the new one.
+	// This isn't fully robust as GetCEPNameFromPod might be the same.
+	// cepOldName := CEPName(oldPod.Namespace + "/" + oldPod.Name) // Simplified placeholder
+	// if _, exists := c.mapping.getCESName(cepOldName); exists {
+	// 	 c.handlePodDelete(oldPod) // This would log and potentially modify CES state
+	// }
+	// return c.handlePodAdd(newPod)
+
+	// More direct approach for now: if newPod's representation should be in a CES,
+	// handlePodAdd will ensure it is, and update if it already exists (idempotency of mapping.insertCEP).
+	// This assumes that the identity (CEPName) either doesn't change or if it does,
+	// the old entry corresponding to oldPod might need explicit removal if not overwritten.
+	// For this subtask, we'll rely on the add logic to correctly place/update the newPod's state.
+	// A true update might need to remove the oldPod first if its CEPName is different from newPod's.
+	cepNewName := NewCEPName(newPod.Name, newPod.Namespace)
+	cepOldName := NewCEPName(oldPod.Name, oldPod.Namespace)
+
+	// If the effective "name" or identity for CES purposes has changed.
+	if cepNewName != cepOldName {
+		c.logger.Debug("Pod identity (for CES) changed during update", "oldPodName", oldPod.Name, "newPodName", newPod.Name)
+		// Remove the old representation
+		cesNameOld, existsOld := c.mapping.getCESName(cepOldName)
+		if existsOld {
+			c.logger.Debug("Removing old Pod (as CEP) representation due to update", "podName", oldPod.Name, logfields.CESName, cesNameOld.string())
+			c.mapping.deleteCEP(cepOldName)
+			if c.mapping.countCEPsInCES(cesNameOld) == 0 {
+				c.mapping.deleteCES(cesNameOld)
+			}
+		}
+	}
+	// Add/Update the new representation
+	// This reuses the add logic, which handles existing entries (updates PodCoreInfo)
+	// or assigns to a new/existing CES.
+	return c.handlePodAdd(newPod)
+}
+
+// handlePodDelete is called when a pod is deleted.
+func (c *cesManager) handlePodDelete(pod *core_v1.Pod) CESKey {
+	// TODO: Implement logic to remove the pod (as a CEP) from its CES.
+	c.logger.Debug("Pod deleted, removing from CES mapping", "podName", pod.Name, "namespace", pod.Namespace)
+
+	// Placeholder: Derive a CEP name from the pod.
+	cepName := NewCEPName(pod.Name, pod.Namespace) // Use NewCEPName for consistency
+
+	cesName, exists := c.mapping.getCESName(cepName)
+	if exists {
+		c.logger.Debug("Removing Pod (as CEP) from CES",
+			"podName", pod.Name,
+			"namespace", pod.Namespace,
+			logfields.CESName, cesName.string(),
+		)
+		c.mapping.deleteCEP(cepName)
+		if c.mapping.countCEPsInCES(cesName) == 0 {
+			c.mapping.deleteCES(cesName)
+		}
+		return NewCESKey(cesName.string(), pod.Namespace)
+	}
+	c.logger.Debug("Pod (as CEP) not found in any CES mapping for deletion", "podName", pod.Name, "namespace", pod.Namespace)
+	return CESKey(resource.Key{})
+}
+
 func (c *cesManager) initializeMappingForCES(ces *cilium_v2.CiliumEndpointSlice) CESName {
 	return c.createCES(ces.Name, ces.Namespace)
 }
 
-func (c *cesManager) initializeMappingCEPtoCES(cep *cilium_v2.CoreCiliumEndpoint, ns string, ces CESName) {
-	cepName := GetCEPNameFromCCEP(cep, ns)
-	c.mapping.insertCEP(cepName, ces)
-}
+// initializeMappingCEPtoCES has been removed as it's specific to CoreCiliumEndpoint
+// and this manager now focuses on pods. If initialization from existing
+// CiliumEndpointSlice CRDs (which might contain non-pod CEPs) is needed,
+// that logic would need to be re-evaluated.
 
 func (c *cesManager) getCEPCountInCES(ces CESName) int {
 	return c.mapping.countCEPsInCES(ces)

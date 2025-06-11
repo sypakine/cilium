@@ -20,9 +20,18 @@ type CESToCEPMapping struct {
 	mutex lock.RWMutex
 	// cepNameToCESName is used to map CiliumEndpoint name to CiliumEndpointSlice name.
 	cepNameToCESName map[CEPName]CESName
-	// cesNameToCEPNameSet is used to map CiliumEndpointSlice name to all CiliumEndpoints names it contains.
-	cesNameToCEPNameSet map[CESName]map[CEPName]struct{}
+	// cesNameToPodInfoSet is used to map CiliumEndpointSlice name to the CoreInfos of Pods it contains.
+	cesNameToPodInfoSet map[CESName]map[CEPName]PodCoreInfo // Changed from struct{} to PodCoreInfo
 	cesData             map[CESName]CESData
+}
+
+// PodCoreInfo holds essential information derived from a Pod, similar to parts of CoreCiliumEndpoint.
+type PodCoreInfo struct {
+	Name       string
+	Namespace  string
+	IPs        []string // Simplified: In reality, this would be structured like cilium_v2.AddressPair
+	Labels     map[string]string
+	// Potentially IdentityID int64 etc.
 }
 
 // CESData contains all CES data except endpoints.
@@ -36,17 +45,20 @@ type CESData struct {
 func newCESToCEPMapping() *CESToCEPMapping {
 	return &CESToCEPMapping{
 		cepNameToCESName:    make(map[CEPName]CESName),
-		cesNameToCEPNameSet: make(map[CESName]map[CEPName]struct{}),
+		cesNameToPodInfoSet: make(map[CESName]map[CEPName]PodCoreInfo), // Initialize the new map type
 		cesData:             make(map[CESName]CESData),
 	}
 }
 
-// Insert the CEP in cache, map CEP name to CES name
-func (c *CESToCEPMapping) insertCEP(cepName CEPName, cesName CESName) {
+// Insert the CEP in cache, map CEP name to CES name, and store its PodCoreInfo
+func (c *CESToCEPMapping) insertCEP(cepName CEPName, cesName CESName, podInfo PodCoreInfo) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.cepNameToCESName[cepName] = cesName
-	c.cesNameToCEPNameSet[cesName][cepName] = struct{}{}
+	if c.cesNameToPodInfoSet[cesName] == nil {
+		c.cesNameToPodInfoSet[cesName] = make(map[CEPName]PodCoreInfo)
+	}
+	c.cesNameToPodInfoSet[cesName][cepName] = podInfo
 }
 
 // Remove the CEP entry from map
@@ -83,25 +95,40 @@ func (c *CESToCEPMapping) countCEPs() int {
 func (c *CESToCEPMapping) countCEPsInCES(ces CESName) int {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-	return len(c.cesNameToCEPNameSet[ces])
+	return len(c.cesNameToPodInfoSet[ces])
 }
 
 // Return CEP Names mapped to the given CES
 func (c *CESToCEPMapping) getCEPsInCES(ces CESName) []CEPName {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-	ceps := make([]CEPName, 0, len(c.cesNameToCEPNameSet[ces]))
-	for cep := range c.cesNameToCEPNameSet[ces] {
+	ceps := make([]CEPName, 0, len(c.cesNameToPodInfoSet[ces]))
+	for cep := range c.cesNameToPodInfoSet[ces] {
 		ceps = append(ceps, cep)
 	}
 	return ceps
+}
+
+// GetPodCoreInfoInCES returns the PodCoreInfo for a given CEPName in a specific CES.
+// Returns the PodCoreInfo and true if found, otherwise zero PodCoreInfo and false.
+func (c *CESToCEPMapping) GetPodCoreInfoInCES(cesName CESName, cepName CEPName) (PodCoreInfo, bool) {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	if podsInCes, ok := c.cesNameToPodInfoSet[cesName]; ok {
+		podInfo, found := podsInCes[cepName]
+		return podInfo, found
+	}
+	return PodCoreInfo{}, false
 }
 
 // Initializes mapping structure for CES
 func (c *CESToCEPMapping) insertCES(cesName CESName, ns string) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	c.cesNameToCEPNameSet[cesName] = make(map[CEPName]struct{})
+	// Ensure the inner map is initialized when a new CES is inserted.
+	if _, exists := c.cesNameToPodInfoSet[cesName]; !exists {
+		c.cesNameToPodInfoSet[cesName] = make(map[CEPName]PodCoreInfo)
+	}
 	c.cesData[cesName] = CESData{
 		ns: ns,
 	}
@@ -111,14 +138,14 @@ func (c *CESToCEPMapping) insertCES(cesName CESName, ns string) {
 func (c *CESToCEPMapping) deleteCES(cesName CESName) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	delete(c.cesNameToCEPNameSet, cesName)
+	delete(c.cesNameToPodInfoSet, cesName)
 	delete(c.cesData, cesName)
 }
 
 func (c *CESToCEPMapping) hasCESName(cesName CESName) bool {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-	_, ok := c.cesNameToCEPNameSet[cesName]
+	_, ok := c.cesNameToPodInfoSet[cesName]
 	return ok
 }
 
@@ -126,15 +153,15 @@ func (c *CESToCEPMapping) hasCESName(cesName CESName) bool {
 func (c *CESToCEPMapping) getCESCount() int {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-	return len(c.cesNameToCEPNameSet)
+	return len(c.cesNameToPodInfoSet)
 }
 
 // Return names of all CESs.
 func (c *CESToCEPMapping) getAllCESs() []CESName {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-	cess := make([]CESName, 0, len(c.cesNameToCEPNameSet))
-	for ces := range c.cesNameToCEPNameSet {
+	cess := make([]CESName, 0, len(c.cesNameToPodInfoSet))
+	for ces := range c.cesNameToPodInfoSet {
 		cess = append(cess, ces)
 	}
 	return cess
@@ -176,8 +203,4 @@ func NewCESKey(name string, namespace string) CESKey {
 
 func NewCEPName(name, ns string) CEPName {
 	return CEPName(resource.Key{Name: name, Namespace: ns})
-}
-
-func GetCEPNameFromCCEP(cep *capi_v2a1.CoreCiliumEndpoint, namespace string) CEPName {
-	return NewCEPName(cep.Name, namespace)
 }

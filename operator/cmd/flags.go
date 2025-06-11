@@ -63,9 +63,9 @@ func InitGlobalFlags(logger *slog.Logger, cmd *cobra.Command, vp *viper.Viper) {
 	// We need to obtain from Cilium ConfigMap if these options are enabled
 	// or disabled. These options are marked as hidden because having it
 	// being printed by operator --help could confuse users.
-	flags.Bool(option.DisableCiliumEndpointCRDName, false, "")
-	flags.MarkHidden(option.DisableCiliumEndpointCRDName)
-	option.BindEnv(vp, option.DisableCiliumEndpointCRDName)
+	// flags.Bool(option.DisableCiliumEndpointCRDName, false, "") // Removed
+	// flags.MarkHidden(option.DisableCiliumEndpointCRDName) // Removed
+	// option.BindEnv(vp, option.DisableCiliumEndpointCRDName) // Removed
 
 	flags.Bool(option.EnableIPv4EgressGateway, false, "")
 	flags.MarkHidden(option.EnableIPv4EgressGateway)

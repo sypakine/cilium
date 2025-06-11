@@ -635,9 +635,7 @@ const (
 	// load logging
 	LogSystemLoadConfigName = "log-system-load"
 
-	// DisableCiliumEndpointCRDName is the name of the option to disable
-	// use of the CEP CRD
-	DisableCiliumEndpointCRDName = "disable-endpoint-crd"
+	// DisableCiliumEndpointCRDName was removed as CiliumEndpoint CRD is being removed.
 
 	// MaxCtrlIntervalName and MaxCtrlIntervalNameEnv allow configuration
 	// of MaxControllerInterval.
@@ -1454,8 +1452,7 @@ type DaemonConfig struct {
 	// the full reconciliation of the endpoint policy map.
 	PolicyMapFullReconciliationInterval time.Duration
 
-	// DisableCiliumEndpointCRD disables the use of CiliumEndpoint CRD
-	DisableCiliumEndpointCRD bool
+	// DisableCiliumEndpointCRD bool // Field removed as CiliumEndpoint CRD is being removed.
 
 	// MaxControllerInterval is the maximum value for a controller's
 	// RunInterval. Zero means unlimited.
@@ -2772,7 +2769,7 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 	c.WireguardPersistentKeepalive = vp.GetDuration(WireguardPersistentKeepalive)
 	c.EnableXDPPrefilter = vp.GetBool(EnableXDPPrefilter)
 	c.EnableTCX = vp.GetBool(EnableTCX)
-	c.DisableCiliumEndpointCRD = vp.GetBool(DisableCiliumEndpointCRDName)
+	// c.DisableCiliumEndpointCRD = vp.GetBool(DisableCiliumEndpointCRDName) // Line removed
 	c.MasqueradeInterfaces = vp.GetStringSlice(MasqueradeInterfaces)
 	c.BPFSocketLBHostnsOnly = vp.GetBool(BPFSocketLBHostnsOnly)
 	c.EnableSocketLB = vp.GetBool(EnableSocketLB)
@@ -3134,10 +3131,9 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 
 	// Ensure CiliumEndpointSlice is enabled only if CiliumEndpointCRD is enabled too.
 	c.EnableCiliumEndpointSlice = vp.GetBool(EnableCiliumEndpointSlice)
-	if c.EnableCiliumEndpointSlice && c.DisableCiliumEndpointCRD {
-		logging.Fatal(logger, fmt.Sprintf("Running Cilium with %s=%t requires %s set to false to enable CiliumEndpoint CRDs.",
-			EnableCiliumEndpointSlice, c.EnableCiliumEndpointSlice, DisableCiliumEndpointCRDName))
-	}
+	// The check "if c.EnableCiliumEndpointSlice && c.DisableCiliumEndpointCRD" was removed
+	// as DisableCiliumEndpointCRD is removed.
+	// If CES is enabled, it implies the old CEP CRD path is not the primary.
 
 	// To support K8s NetworkPolicy
 	c.EnableK8sNetworkPolicy = vp.GetBool(EnableK8sNetworkPolicy)
@@ -3163,10 +3159,11 @@ func (c *DaemonConfig) Populate(logger *slog.Logger, vp *viper.Viper) {
 			logger.Warn(fmt.Sprintf("Running Cilium with %q=%q requires identity allocation via CRDs. Changing %s to %q", KVStore, c.KVStore, IdentityAllocationMode, IdentityAllocationModeCRD))
 			c.IdentityAllocationMode = IdentityAllocationModeCRD
 		}
-		if c.DisableCiliumEndpointCRD && NetworkPolicyEnabled(c) {
-			logger.Warn(fmt.Sprintf("Running Cilium with %q=%q requires endpoint CRDs when network policy enforcement system is enabled. Changing %s to %t", KVStore, c.KVStore, DisableCiliumEndpointCRDName, false))
-			c.DisableCiliumEndpointCRD = false
-		}
+		// The check "if c.DisableCiliumEndpointCRD && NetworkPolicyEnabled(c)" was removed.
+		// If no KVStore is present and network policy is on, CEP CRD (which is now removed)
+		// was previously forced to be enabled. This might need further review on how identity
+		// and endpoint info is distributed without CEP CRD and without KVStore if CES is also off.
+		// For now, removing the direct reference to DisableCiliumEndpointCRD.
 	}
 
 	switch c.IPAM {

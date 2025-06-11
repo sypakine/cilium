@@ -324,8 +324,8 @@ func InitGlobalFlags(cmd *cobra.Command, vp *viper.Viper) {
 	flags.StringSlice(option.ExcludeLocalAddress, []string{}, "Exclude CIDR from being recognized as local address")
 	option.BindEnv(vp, option.ExcludeLocalAddress)
 
-	flags.Bool(option.DisableCiliumEndpointCRDName, false, "Disable use of CiliumEndpoint CRD")
-	option.BindEnv(vp, option.DisableCiliumEndpointCRDName)
+	// flags.Bool(option.DisableCiliumEndpointCRDName, false, "Disable use of CiliumEndpoint CRD") // Removed
+	// option.BindEnv(vp, option.DisableCiliumEndpointCRDName) // Removed
 
 	flags.StringSlice(option.MasqueradeInterfaces, []string{}, "Limit iptables-based egress masquerading to interfaces selector")
 	option.BindEnv(vp, option.MasqueradeInterfaces)
