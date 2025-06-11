@@ -148,7 +148,7 @@ func TestExporterWithFilters(t *testing.T) {
 	exporter, err := newExporter(log, opts)
 	assert.NoError(t, err)
 
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	cancelled := false
@@ -359,7 +359,7 @@ func TestExporterOnExportEvent(t *testing.T) {
 	exporter, err := newExporter(log, opts)
 	assert.NoError(t, err)
 
-	ctx := t.Context()
+	ctx := context.Background()
 	for _, ev := range events {
 		err := exporter.Export(ctx, ev)
 		assert.NoError(t, err)

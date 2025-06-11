@@ -133,63 +133,6 @@ func (m *Map) Type() ebpf.MapType {
 	return ebpf.UnspecifiedMap
 }
 
-type nopDecoder []struct{}
-
-func (nopDecoder) UnmarshalBinary(data []byte) error {
-	return nil
-}
-
-// BatchCount the number of elements in the map using a batch lookup.
-// Only usable for hash, lru-hash and lpm-trie maps.
-func (m *Map) BatchCount() (count int, err error) {
-	switch m.Type() {
-	case ebpf.Hash, ebpf.LRUHash, ebpf.LPMTrie:
-		break
-	default:
-		return 0, fmt.Errorf("unsupported map type %s, must be one either hash or lru-hash types", m.Type())
-	}
-	chunkSize := startingChunkSize(int(m.MaxEntries()))
-
-	// Since we don't care about the actual data we just use a no-op binary
-	// decoder.
-	keys := make(nopDecoder, chunkSize)
-	vals := make(nopDecoder, chunkSize)
-	maxRetries := defaultBatchedRetries
-
-	var cursor ebpf.MapBatchCursor
-	for {
-		for retry := range maxRetries {
-			// Attempt to read batch into buffer.
-			c, batchErr := m.BatchLookup(&cursor, keys, vals, nil)
-			count += c
-
-			switch {
-			// Lookup batch on LRU hash map may fail if the buffer passed is not big enough to
-			// accommodate the largest bucket size in the LRU map. See full comment in
-			// [BatchIterator.IterateAll]
-			case errors.Is(batchErr, unix.ENOSPC):
-				if retry == maxRetries-1 {
-					err = batchErr
-				} else {
-					chunkSize *= 2
-				}
-				keys = make(nopDecoder, chunkSize)
-				vals = make(nopDecoder, chunkSize)
-				continue
-			case errors.Is(batchErr, ebpf.ErrKeyNotExist):
-				return
-			case batchErr != nil:
-				// If we're not done, and we didn't hit a ENOSPC then stop iteration and record
-				// the error.
-				err = fmt.Errorf("failed to iterate map: %w", batchErr)
-				return
-			}
-			// Do the next batch
-			break
-		}
-	}
-}
-
 func (m *Map) KeySize() uint32 {
 	if m.m != nil {
 		return m.m.KeySize()
@@ -385,25 +328,21 @@ func (m *Map) WithGroupName(group string) *Map {
 // WithPressureMetricThreshold enables the tracking of a metric that measures
 // the pressure of this map. This metric is only reported if over the
 // threshold.
-func (m *Map) WithPressureMetricThreshold(registry *metrics.Registry, threshold float64) *Map {
-	if registry == nil {
-		return m
-	}
-
+func (m *Map) WithPressureMetricThreshold(threshold float64) *Map {
 	// When pressure metric is enabled, we keep track of map keys in cache
 	if m.cache == nil {
 		m.cache = map[string]*cacheEntry{}
 	}
 
-	m.pressureGauge = registry.NewBPFMapPressureGauge(m.NonPrefixedName(), threshold)
+	m.pressureGauge = metrics.NewBPFMapPressureGauge(m.NonPrefixedName(), threshold)
 
 	return m
 }
 
 // WithPressureMetric enables tracking and reporting of this map pressure with
 // threshold 0.
-func (m *Map) WithPressureMetric(registry *metrics.Registry) *Map {
-	return m.WithPressureMetricThreshold(registry, 0.0)
+func (m *Map) WithPressureMetric() *Map {
+	return m.WithPressureMetricThreshold(0.0)
 }
 
 // UpdatePressureMetricWithSize updates map pressure metric using the given map size.
@@ -926,15 +865,17 @@ type BatchIterator[KT, VT any, KP KeyPointer[KT], VP ValuePointer[VT]] struct {
 	opts *ebpf.BatchOptions
 }
 
-// NewBatchIterator that allows for iterating a map using the bpf batch api.
-// This automatically handles concerns such as batch sizing and handling errors
-// when end of map is reached.
-// Following iteration, any unresolved errors encountered when iterating
-// the bpf map can be accessed via the Err() function.
-// The pointer type of KT & VT must implement Map{Key,Value}, respectively.
+// NewBatchIterator returns a typed wrapper for *Map that allows for
+// iterating (i.e. "dumping") the map using the bpf batch api.
 //
-// Subsequent iterations via IterateAll reset all internal state and begin
-// iteration over.
+// Unlike the general *Map dump functions, this must read into slices of
+// a concrete type (such as struct, or other scalar type), rather than into
+// pointers. This is because there is currently no safe way to allocate a
+// contiguous slice of key/value elements from either the underlying generic
+// pointer types or from MapKey/MapValue interface types.
+//
+// This means that attempting to use the pointer types that implement
+// MapKey/MapValue will fail upon iteration (via the Err() function).
 //
 // Example usage:
 //
@@ -946,10 +887,14 @@ type BatchIterator[KT, VT any, KP KeyPointer[KT], VP ValuePointer[VT]] struct {
 //		BPF_F_NO_PREALLOC,
 //	)
 //
+//	// Note: TestKey & TestValue are not pointer types!
 //	iter := NewBatchIterator[TestKey, TestValue](m)
-//	for k, v := range iter.IterateAll(context.TODO()) {
+//	for k, v := range iter {
 //		// ...
 //	}
+//
+// Following iteration, any unresolved errors encountered when iterating
+// the bpf map can be accessed via the Err() function.
 func NewBatchIterator[KT any, VT any, KP KeyPointer[KT], VP ValuePointer[VT]](m *Map) *BatchIterator[KT, VT, KP, VP] {
 	return &BatchIterator[KT, VT, KP, VP]{
 		m: m,

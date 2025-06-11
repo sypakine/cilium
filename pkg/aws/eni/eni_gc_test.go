@@ -13,6 +13,7 @@ import (
 
 	ec2mock "github.com/cilium/cilium/pkg/aws/ec2/mock"
 	"github.com/cilium/cilium/pkg/controller"
+	"github.com/cilium/cilium/pkg/logging"
 )
 
 func waitForControllerRun(t *testing.T, controller *controller.Manager, name string, expectedCount int64) {
@@ -38,7 +39,9 @@ func waitForControllerRun(t *testing.T, controller *controller.Manager, name str
 }
 
 func TestStartENIGarbageCollector(t *testing.T) {
-	logger := hivetest.Logger(t)
+	level := logging.GetLevel(logging.DefaultLogger)
+	logging.SetLogLevelToDebug()
+	defer logging.SetLogLevel(level)
 
 	tags := map[string]string{
 		"cilium-managed": "true",
@@ -65,7 +68,7 @@ func TestStartENIGarbageCollector(t *testing.T) {
 		createTaggedENI()
 	}
 
-	StartENIGarbageCollector(t.Context(), logger, ec2api, GarbageCollectionParams{
+	StartENIGarbageCollector(t.Context(), hivetest.Logger(t), ec2api, GarbageCollectionParams{
 		RunInterval:    0, // for testing, we're triggering the controller manually
 		MaxPerInterval: 4,
 		ENITags:        tags,

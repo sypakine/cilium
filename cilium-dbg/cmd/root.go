@@ -6,7 +6,6 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -27,7 +26,7 @@ var (
 
 	cfgFile string
 	client  *clientPkg.Client
-	log     *slog.Logger
+	log     = logging.DefaultLogger.WithField(logfields.LogSubsys, "cilium-dbg")
 	verbose = false
 )
 
@@ -87,7 +86,6 @@ func initConfig() {
 	if err := logging.SetupLogging(option.Config.LogDriver, option.Config.LogOpt, "cilium-dbg", vp.GetBool("debug")); err != nil {
 		Fatalf("Error while setting up logging: %s\n", err)
 	}
-	log = logging.DefaultSlogLogger.With(logfields.LogSubsys, "cilium-dbg")
 
 	if cl, err := clientPkg.NewClient(vp.GetString("host")); err != nil {
 		Fatalf("Error while creating client: %s\n", err)

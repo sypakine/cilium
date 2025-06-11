@@ -81,9 +81,8 @@ set_ipsec_decrypt_mark(struct __ctx_buff *ctx, __u16 node_id)
 }
 
 static __always_inline int
-set_ipsec_encrypt(struct __ctx_buff *ctx, __u8 spi,
-		  struct remote_endpoint_info *info, __u32 seclabel,
-		  bool use_meta, bool use_spi_from_map)
+set_ipsec_encrypt(struct __ctx_buff *ctx, __u8 spi, __u32 tunnel_endpoint,
+		  __u32 seclabel, bool use_meta, bool use_spi_from_map)
 {
 	/* IPSec is performed by the stack on any packets with the
 	 * MARK_MAGIC_ENCRYPT bit set. During the process though we
@@ -96,7 +95,7 @@ set_ipsec_encrypt(struct __ctx_buff *ctx, __u8 spi,
 	struct node_value *node_value = NULL;
 	__u32 mark;
 
-	node_value = lookup_node(info);
+	node_value = lookup_ip4_node(tunnel_endpoint);
 	if (!node_value || !node_value->id)
 		return DROP_NO_NODE_ID;
 
@@ -262,13 +261,9 @@ ipsec_maybe_redirect_to_encrypt(struct __ctx_buff *ctx, __be16 proto,
 			/* NOTE: we confirm double-encryption will not occur
 			 * above in the `ctx_is_overlay_encrypted` check
 			 */
-			struct remote_endpoint_info fake_info = {0};
-
-			fake_info.tunnel_endpoint.ip4 = ip4->daddr;
-			fake_info.flag_has_tunnel_ep = true;
 
 			/* see comment in the native-routing mode call. */
-			ret = set_ipsec_encrypt(ctx, 0, &fake_info,
+			ret = set_ipsec_encrypt(ctx, 0, ip4->daddr,
 						get_identity(ctx), true,
 						true);
 			if (ret != CTX_ACT_OK)
@@ -293,33 +288,10 @@ ipsec_maybe_redirect_to_encrypt(struct __ctx_buff *ctx, __be16 proto,
 
 # ifdef ENABLE_IPV6
 	case bpf_htons(ETH_P_IPV6):
+#ifndef TUNNEL_MODE
 		/* handle native routing ipv6 */
 		if (!revalidate_data(ctx, &data, &data_end, &ip6))
 			return DROP_INVALID;
-
-#  if defined(TUNNEL_MODE)
-		/* See comment in IPv4 case.
-		 */
-		if (ctx_is_overlay(ctx)) {
-			/* NOTE: we confirm double-encryption will not occur
-			 * above in the `ctx_is_overlay_encrypted` check
-			 */
-			struct remote_endpoint_info fake_info = {0};
-
-			ipv6_addr_copy(&fake_info.tunnel_endpoint.ip6,
-				       (union v6addr *)&ip6->daddr);
-			fake_info.flag_has_tunnel_ep = true;
-			fake_info.flag_ipv6_tunnel_ep = true;
-
-			/* see comment in the native-routing mode call. */
-			ret = set_ipsec_encrypt(ctx, 0, &fake_info,
-						get_identity(ctx), true,
-						true);
-			if (ret != CTX_ACT_OK)
-				return ret;
-			goto overlay_encrypt;
-		}
-#  endif /* TUNNEL_MODE */
 
 		ip_proto = ip6->nexthdr;
 
@@ -333,12 +305,16 @@ ipsec_maybe_redirect_to_encrypt(struct __ctx_buff *ctx, __be16 proto,
 			src_sec_identity = src->sec_identity;
 		}
 		break;
+#endif /* TUNNEL_MODE */
 # endif /* ENABLE_IPv6 */
 	default:
 		return CTX_ACT_OK;
 	}
 
-	if (!dst || !dst->flag_has_tunnel_ep)
+	if (!dst)
+		return CTX_ACT_OK;
+
+	if (!dst->tunnel_endpoint.ip4)
 		return CTX_ACT_OK;
 
 	if (!ipsec_redirect_sec_id_ok(src_sec_identity, dst->sec_identity,
@@ -354,11 +330,12 @@ ipsec_maybe_redirect_to_encrypt(struct __ctx_buff *ctx, __be16 proto,
 	 * supports rhel 8.6 'use_meta' can be flipped back to false and we
 	 * can rely only on the mark.
 	 */
-	ret = set_ipsec_encrypt(ctx, 0, dst, src_sec_identity, true, true);
+	ret = set_ipsec_encrypt(ctx, 0, dst->tunnel_endpoint.ip4,
+				src_sec_identity, true, true);
 	if (ret != CTX_ACT_OK)
 		return ret;
 
-#  if defined(TUNNEL_MODE)
+#  if defined(TUNNEL_MODE) && defined(ENABLE_IPV4)
 overlay_encrypt:
 #  endif
 	/* redirect to the ingress side of CILIUM_NET.

@@ -28,7 +28,6 @@ import (
 	v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	k8s_client "github.com/cilium/cilium/pkg/k8s/client"
 	cilium_client_v2 "github.com/cilium/cilium/pkg/k8s/client/clientset/versioned/typed/cilium.io/v2"
-	nodeTypes "github.com/cilium/cilium/pkg/node/types"
 	"github.com/cilium/cilium/pkg/option"
 )
 
@@ -86,7 +85,7 @@ func newCRDStatusFixture(ctx context.Context, req *require.Assertions, l *slog.L
 		}
 	}
 
-	f.hive = hive.New(
+	f.hive = hive.New(cell.Module("test", "test",
 		daemon_k8s.LocalNodeCell,
 		cell.Provide(
 			func() *option.DaemonConfig {
@@ -116,7 +115,7 @@ func newCRDStatusFixture(ctx context.Context, req *require.Assertions, l *slog.L
 			f.db = db
 			f.reconcileErrTbl = table
 		}),
-	)
+	))
 
 	return f, watchersReadyFn
 }
@@ -259,7 +258,7 @@ func TestCRDConditions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), TestTimeout)
-			logger := hivetest.Logger(t, hivetest.LogLevel(slog.LevelDebug))
+			logger := hivetest.Logger(t)
 
 			f, watcherReadyFn := newCRDStatusFixture(ctx, require.New(t), logger)
 
@@ -337,10 +336,9 @@ func TestCRDConditions(t *testing.T) {
 func TestDisableStatusReport(t *testing.T) {
 	ctx := context.TODO()
 	logger := hivetest.Logger(t)
-	nodeTypes.SetName("node0")
 
 	var cs k8s_client.Clientset
-	hive := hive.New(
+	hive := hive.New(cell.Module("test", "test",
 		daemon_k8s.LocalNodeCell,
 		cell.Provide(
 			func() *option.DaemonConfig {
@@ -401,7 +399,7 @@ func TestDisableStatusReport(t *testing.T) {
 			}
 			jg.Add(job.OneShot("cleanup-status", r.cleanupStatus))
 		}),
-	)
+	))
 
 	require.NoError(t, hive.Start(logger, ctx))
 	t.Cleanup(func() {

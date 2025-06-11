@@ -78,9 +78,6 @@ type StatusResponse struct {
 	// Status of Hubble server
 	Hubble *HubbleStatus `json:"hubble,omitempty"`
 
-	// Status of Hubble metrics server
-	HubbleMetrics *HubbleMetricsStatus `json:"hubble-metrics,omitempty"`
-
 	// Status of identity range of the cluster
 	IdentityRange *IdentityRange `json:"identity-range,omitempty"`
 
@@ -186,10 +183,6 @@ func (m *StatusResponse) Validate(formats strfmt.Registry) error {
 	}
 
 	if err := m.validateHubble(formats); err != nil {
-		res = append(res, err)
-	}
-
-	if err := m.validateHubbleMetrics(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -549,25 +542,6 @@ func (m *StatusResponse) validateHubble(formats strfmt.Registry) error {
 	return nil
 }
 
-func (m *StatusResponse) validateHubbleMetrics(formats strfmt.Registry) error {
-	if swag.IsZero(m.HubbleMetrics) { // not required
-		return nil
-	}
-
-	if m.HubbleMetrics != nil {
-		if err := m.HubbleMetrics.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
-				return ve.ValidateName("hubble-metrics")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
-				return ce.ValidateName("hubble-metrics")
-			}
-			return err
-		}
-	}
-
-	return nil
-}
-
 func (m *StatusResponse) validateIdentityRange(formats strfmt.Registry) error {
 	if swag.IsZero(m.IdentityRange) { // not required
 		return nil
@@ -877,10 +851,6 @@ func (m *StatusResponse) ContextValidate(ctx context.Context, formats strfmt.Reg
 	}
 
 	if err := m.contextValidateHubble(ctx, formats); err != nil {
-		res = append(res, err)
-	}
-
-	if err := m.contextValidateHubbleMetrics(ctx, formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -1253,27 +1223,6 @@ func (m *StatusResponse) contextValidateHubble(ctx context.Context, formats strf
 				return ve.ValidateName("hubble")
 			} else if ce, ok := err.(*errors.CompositeError); ok {
 				return ce.ValidateName("hubble")
-			}
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (m *StatusResponse) contextValidateHubbleMetrics(ctx context.Context, formats strfmt.Registry) error {
-
-	if m.HubbleMetrics != nil {
-
-		if swag.IsZero(m.HubbleMetrics) { // not required
-			return nil
-		}
-
-		if err := m.HubbleMetrics.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
-				return ve.ValidateName("hubble-metrics")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
-				return ce.ValidateName("hubble-metrics")
 			}
 			return err
 		}

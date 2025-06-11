@@ -11,12 +11,9 @@ import (
 	"sync"
 	"unsafe"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/cilium/cilium/pkg/bpf"
 	cmtypes "github.com/cilium/cilium/pkg/clustermesh/types"
 	"github.com/cilium/cilium/pkg/ebpf"
-	"github.com/cilium/cilium/pkg/metrics"
 	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/types"
 )
@@ -243,7 +240,7 @@ func newIPCacheMap(name string) *bpf.Map {
 		&Key{},
 		&RemoteEndpointInfo{},
 		MaxEntries,
-		unix.BPF_F_NO_PREALLOC)
+		bpf.BPF_F_NO_PREALLOC)
 }
 
 func newIPCacheMapV1(name string) *bpf.Map {
@@ -253,13 +250,13 @@ func newIPCacheMapV1(name string) *bpf.Map {
 		&Key{},
 		&RemoteEndpointInfoV1{},
 		MaxEntries,
-		unix.BPF_F_NO_PREALLOC)
+		bpf.BPF_F_NO_PREALLOC)
 }
 
 // NewMap instantiates a Map.
-func NewMap(registry *metrics.Registry, name string) *Map {
+func NewMap(name string) *Map {
 	return &Map{
-		Map: *newIPCacheMap(name).WithCache().WithPressureMetric(registry).
+		Map: *newIPCacheMap(name).WithCache().WithPressureMetric().
 			WithEvents(option.Config.GetEventBufferConfig(name)),
 	}
 }
@@ -277,9 +274,9 @@ var (
 
 // IPCacheMap gets the ipcache Map singleton. If it has not already been done,
 // this also initializes the Map.
-func IPCacheMap(registry *metrics.Registry) *Map {
+func IPCacheMap() *Map {
 	once.Do(func() {
-		ipcache = NewMap(registry, Name)
+		ipcache = NewMap(Name)
 	})
 	return ipcache
 }

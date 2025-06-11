@@ -7,6 +7,7 @@
 #
 
 hive/start
+db/initialized
 
 # Add our test service and backends. To avoid undeterministic ID allocation
 # add the IPv4 endpoints first.
@@ -65,10 +66,8 @@ Address              Instances
   "NatPolicy": "",
   "ExtTrafficPolicy": "Cluster",
   "IntTrafficPolicy": "Cluster",
-  "ForwardingMode": "",
   "SessionAffinity": false,
   "SessionAffinityTimeout": 0,
-  "LoadBalancerClass": null,
   "ProxyRedirect": null,
   "HealthCheckNodePort": 0,
   "LoopbackHostPort": false,
@@ -76,7 +75,8 @@ Address              Instances
   "PortNames": {
     "http": 80
   },
-  "TrafficDistribution": ""
+  "TrafficDistribution": "",
+  "Properties": []
 }
 -- frontends-expected.json --
 {
@@ -260,10 +260,8 @@ selector:
 natpolicy: ""
 exttrafficpolicy: Cluster
 inttrafficpolicy: Cluster
-forwardingmode: ""
 sessionaffinity: false
 sessionaffinitytimeout: 0s
-loadbalancerclass: null
 proxyredirect: null
 healthchecknodeport: 0
 loopbackhostport: false
@@ -271,6 +269,7 @@ sourceranges: []
 portnames:
     http: 80
 trafficdistribution: ""
+properties: []
 -- frontends-expected.yaml --
 frontendparams:
     address: 10.96.50.104:80/TCP

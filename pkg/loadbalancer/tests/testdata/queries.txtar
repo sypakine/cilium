@@ -5,6 +5,7 @@
 
 # Start and wait for sync against the k8s fake client.
 hive start
+db/initialized
 
 # Show the registered tables and indexes
 db

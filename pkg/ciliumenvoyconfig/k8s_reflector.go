@@ -54,11 +54,6 @@ func cecListerWatchers(cs client.Clientset) (out struct {
 	return
 }
 
-const (
-	k8sAPIGroupCiliumEnvoyConfigV2            = "cilium/v2::CiliumEnvoyConfig"
-	k8sAPIGroupCiliumClusterwideEnvoyConfigV2 = "cilium/v2::CiliumClusterwideEnvoyConfig"
-)
-
 // registerCECK8sReflector registers reflectors to Table[CEC] from CiliumEnvoyConfig and
 // CiliumClusterwideEnvoyConfig.
 func registerCECK8sReflector(
@@ -66,7 +61,6 @@ func registerCECK8sReflector(
 	ecfg loadbalancer.Config,
 	p *CECResourceParser,
 	crdSync promise.Promise[synced.CRDSync],
-	apiGroups *synced.APIGroups,
 	nodeLabels *nodeLabels,
 	log *slog.Logger,
 	lws listerWatchers,
@@ -80,10 +74,6 @@ func registerCECK8sReflector(
 	if lws.cec == nil || !ecfg.EnableExperimentalLB {
 		return nil
 	}
-
-	apiGroups.AddAPI(k8sAPIGroupCiliumEnvoyConfigV2)
-	apiGroups.AddAPI(k8sAPIGroupCiliumClusterwideEnvoyConfigV2)
-
 	transform := func(txn statedb.ReadTxn, obj any) (*CEC, bool) {
 		var (
 			objMeta *metav1.ObjectMeta

@@ -88,9 +88,6 @@ type ProxyPorts struct {
 
 	restoredProxyPortsStaleLimit uint
 
-	// restoreComplete is closed when previous ports have been restored
-	restoreComplete chan struct{}
-
 	// Datapath updater for installing and removing proxy rules for a single
 	// proxy port
 	datapathUpdater DatapathUpdater
@@ -126,7 +123,6 @@ func NewProxyPorts(
 		rangeMin:                     config.ProxyPortrangeMin,
 		rangeMax:                     config.ProxyPortrangeMax,
 		restoredProxyPortsStaleLimit: config.RestoredProxyPortsAgeLimit,
-		restoreComplete:              make(chan struct{}),
 		datapathUpdater:              datapathUpdater,
 		proxyPortsPath:               filepath.Join(option.Config.StateDir, proxyPortsFile),
 		allocatedPorts:               make(map[uint16]bool),
@@ -644,12 +640,6 @@ func (p *ProxyPorts) RestoreProxyPorts() {
 		)
 		p.restoreProxyPortsFromIptables()
 	}
-	close(p.restoreComplete)
-}
-
-// RestoreComplete returns a chan that is closed when port restoration is complete.
-func (p *ProxyPorts) RestoreComplete() <-chan struct{} {
-	return p.restoreComplete
 }
 
 // GetProxyPort() returns the fixed listen port for a proxy, if any.

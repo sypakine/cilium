@@ -344,13 +344,15 @@ func Test_ParseNodeAddressType(t *testing.T) {
 
 func TestParseNodeWithService(t *testing.T) {
 	oldAnnotateK8sNode := option.Config.AnnotateK8sNode
+	oldDefaultLbMode := option.Config.NodePortMode
 
 	var lbConfig loadbalancer.Config
 	option.Config.AnnotateK8sNode = false
-	lbConfig.LBMode = loadbalancer.LBModeSNAT
+	option.Config.NodePortMode = option.NodePortModeSNAT
 	lbConfig.LBAlgorithm = loadbalancer.LBAlgorithmRandom
 	defer func() {
 		option.Config.AnnotateK8sNode = oldAnnotateK8sNode
+		option.Config.NodePortMode = oldDefaultLbMode
 	}()
 
 	k8sNode := &slim_corev1.Node{

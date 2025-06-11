@@ -62,15 +62,36 @@ func initKubeProxyReplacementOptions(logger *slog.Logger, sysctl sysctl.Sysctl, 
 		option.Config.EnableSessionAffinity = true
 	}
 
-	if !option.Config.EnableNodePort {
-		// Disable features depending on NodePort
-		option.Config.EnableHostPort = false
-		option.Config.EnableExternalIPs = false
-		option.Config.EnableSVCSourceRangeCheck = false
-		option.Config.EnableHostLegacyRouting = true
-	}
-
 	if option.Config.EnableNodePort {
+		if option.Config.NodePortMode != option.NodePortModeSNAT &&
+			option.Config.NodePortMode != option.NodePortModeDSR &&
+			option.Config.NodePortMode != option.NodePortModeHybrid {
+			return fmt.Errorf("Invalid value for --%s: %s", option.NodePortMode, option.Config.NodePortMode)
+		}
+
+		if option.Config.LoadBalancerModeAnnotation &&
+			option.Config.NodePortMode == option.NodePortModeHybrid {
+			return fmt.Errorf("The value --%s=%s is not supported as default under annotation mode", option.NodePortMode, option.Config.NodePortMode)
+		}
+
+		if option.Config.NodePortMode == option.NodePortModeDSR &&
+			option.Config.LoadBalancerDSRDispatch != option.DSRDispatchOption &&
+			option.Config.LoadBalancerDSRDispatch != option.DSRDispatchIPIP &&
+			option.Config.LoadBalancerDSRDispatch != option.DSRDispatchGeneve {
+			return fmt.Errorf("Invalid value for --%s: %s", option.LoadBalancerDSRDispatch, option.Config.LoadBalancerDSRDispatch)
+		}
+
+		if option.Config.NodePortMode == option.NodePortModeHybrid &&
+			option.Config.LoadBalancerDSRDispatch != option.DSRDispatchOption &&
+			option.Config.LoadBalancerDSRDispatch != option.DSRDispatchGeneve {
+			return fmt.Errorf("Invalid value for --%s: %s", option.LoadBalancerDSRDispatch, option.Config.LoadBalancerDSRDispatch)
+		}
+
+		if option.Config.LoadBalancerModeAnnotation &&
+			option.Config.LoadBalancerDSRDispatch != option.DSRDispatchIPIP {
+			return fmt.Errorf("Invalid value for --%s: %s", option.LoadBalancerDSRDispatch, option.Config.LoadBalancerDSRDispatch)
+		}
+
 		if option.Config.LoadBalancerRSSv4CIDR != "" {
 			ip, cidr, err := net.ParseCIDR(option.Config.LoadBalancerRSSv4CIDR)
 			if ip.To4() == nil {
@@ -105,14 +126,14 @@ func initKubeProxyReplacementOptions(logger *slog.Logger, sysctl sysctl.Sysctl, 
 			option.Config.LoadBalancerRSSv6 = *cidr
 		}
 
-		dsrIPIP := lbConfig.LoadBalancerUsesDSR() && lbConfig.DSRDispatch == loadbalancer.DSRDispatchIPIP
+		dsrIPIP := option.Config.LoadBalancerUsesDSR() && option.Config.LoadBalancerDSRDispatch == option.DSRDispatchIPIP
 		if dsrIPIP && option.Config.NodePortAcceleration == option.NodePortAccelerationDisabled {
-			return fmt.Errorf("DSR dispatch mode %q currently only available under XDP acceleration", lbConfig.DSRDispatch)
+			return fmt.Errorf("DSR dispatch mode %s currently only available under XDP acceleration", option.Config.LoadBalancerDSRDispatch)
 		}
 
 		if (option.Config.LoadBalancerRSSv4CIDR != "" || option.Config.LoadBalancerRSSv6CIDR != "") && !dsrIPIP {
 			return fmt.Errorf("Invalid value for --%s/%s: currently only supported under %s dispatch for DSR",
-				option.LoadBalancerRSSv4CIDR, option.LoadBalancerRSSv6CIDR, loadbalancer.DSRDispatchIPIP)
+				option.LoadBalancerRSSv4CIDR, option.LoadBalancerRSSv6CIDR, option.DSRDispatchIPIP)
 		}
 
 		if option.Config.NodePortAcceleration != option.NodePortAccelerationDisabled &&
@@ -136,27 +157,27 @@ func initKubeProxyReplacementOptions(logger *slog.Logger, sysctl sysctl.Sysctl, 
 		}
 
 		if option.Config.TunnelingEnabled() && tunnelConfig.EncapProtocol() == tunnel.VXLAN &&
-			lbConfig.LoadBalancerUsesDSR() {
-			return fmt.Errorf("Node Port %q mode cannot be used with %s tunneling.", lbConfig.LBMode, tunnel.VXLAN)
+			option.Config.LoadBalancerUsesDSR() {
+			return fmt.Errorf("Node Port %q mode cannot be used with %s tunneling.", option.Config.NodePortMode, tunnel.VXLAN)
 		}
 
-		if option.Config.TunnelingEnabled() && lbConfig.LoadBalancerUsesDSR() &&
-			lbConfig.DSRDispatch != loadbalancer.DSRDispatchGeneve {
+		if option.Config.TunnelingEnabled() && option.Config.LoadBalancerUsesDSR() &&
+			option.Config.LoadBalancerDSRDispatch != option.DSRDispatchGeneve {
 			return fmt.Errorf("Tunnel routing with Node Port %q mode requires %s dispatch.",
-				lbConfig.LBMode, loadbalancer.DSRDispatchGeneve)
+				option.Config.NodePortMode, option.DSRDispatchGeneve)
 		}
 
-		if lbConfig.LoadBalancerUsesDSR() &&
-			lbConfig.DSRDispatch == loadbalancer.DSRDispatchGeneve &&
+		if option.Config.LoadBalancerUsesDSR() &&
+			option.Config.LoadBalancerDSRDispatch == option.DSRDispatchGeneve &&
 			tunnelConfig.EncapProtocol() != tunnel.Geneve {
-			return fmt.Errorf("Node Port %q mode with %q dispatch requires %s tunnel protocol.",
-				lbConfig.LBMode, lbConfig.DSRDispatch, tunnel.Geneve)
+			return fmt.Errorf("Node Port %q mode with %s dispatch requires %s tunnel protocol.",
+				option.Config.NodePortMode, option.Config.LoadBalancerDSRDispatch, tunnel.Geneve)
 		}
 
 		if option.Config.LoadBalancerIPIPSockMark {
 			if !dsrIPIP {
 				return fmt.Errorf("Node Port %q mode with IPIP socket mark logic requires %s dispatch.",
-					lbConfig.LBMode, loadbalancer.DSRDispatchIPIP)
+					option.Config.NodePortMode, option.DSRDispatchIPIP)
 			}
 			option.Config.EnableHealthDatapath = true
 		}
@@ -166,11 +187,7 @@ func initKubeProxyReplacementOptions(logger *slog.Logger, sysctl sysctl.Sysctl, 
 		// InstallNoConntrackIptRules can only be enabled when Cilium is
 		// running in full KPR mode as otherwise conntrack would be
 		// required for NAT operations
-		if !(option.Config.EnableHostPort &&
-			option.Config.EnableNodePort &&
-			option.Config.EnableExternalIPs &&
-			option.Config.EnableSocketLB) {
-
+		if !option.Config.KubeProxyReplacementFullyEnabled() {
 			return fmt.Errorf("%s requires the agent to run with %s=%s.",
 				option.InstallNoConntrackIptRules, option.KubeProxyReplacement, option.KubeProxyReplacementTrue)
 		}
@@ -234,7 +251,7 @@ func probeKubeProxyReplacementOptions(logger *slog.Logger, lbConfig loadbalancer
 		if option.Config.EnableMKE {
 			if probes.HaveProgramHelper(logger, ebpf.CGroupSockAddr, asm.FnGetCgroupClassid) != nil ||
 				probes.HaveProgramHelper(logger, ebpf.CGroupSockAddr, asm.FnGetNetnsCookie) != nil {
-				return fmt.Errorf("BPF kube-proxy replacement under MKE with --%s needs kernel 5.7 or newer", option.EnableMKE)
+				logging.Fatal(logger, fmt.Sprintf("BPF kube-proxy replacement under MKE with --%s needs kernel 5.7 or newer", option.EnableMKE))
 			}
 		}
 
@@ -284,7 +301,21 @@ func probeKubeProxyReplacementOptions(logger *slog.Logger, lbConfig loadbalancer
 
 // finishKubeProxyReplacementInit finishes initialization of kube-proxy
 // replacement after all devices are known.
-func finishKubeProxyReplacementInit(logger *slog.Logger, sysctl sysctl.Sysctl, devices []*tables.Device, directRoutingDevice string, lbConfig loadbalancer.Config) error {
+func finishKubeProxyReplacementInit(logger *slog.Logger, sysctl sysctl.Sysctl, devices []*tables.Device, directRoutingDevice string) error {
+	if !option.Config.EnableNodePort {
+		// Make sure that NodePort dependencies are disabled
+		disableNodePort()
+		return nil
+	}
+
+	if option.Config.DryMode {
+		return nil
+	}
+
+	// +-------------------------------------------------------+
+	// | After this point, BPF NodePort should not be disabled |
+	// +-------------------------------------------------------+
+
 	// For MKE, we only need to change/extend the socket LB behavior in case
 	// of kube-proxy replacement. Otherwise, nothing else is needed.
 	if option.Config.EnableMKE && option.Config.EnableSocketLB {
@@ -310,13 +341,13 @@ func finishKubeProxyReplacementInit(logger *slog.Logger, sysctl sysctl.Sysctl, d
 		}
 	}
 
-	if option.Config.NodePortNat46X64 && lbConfig.LBMode != loadbalancer.LBModeSNAT {
+	if option.Config.NodePortNat46X64 && option.Config.NodePortMode != option.NodePortModeSNAT {
 		return fmt.Errorf("NAT46/NAT64 requires SNAT mode for services")
 	}
 
 	if option.Config.EnableIPv4 &&
 		!option.Config.TunnelingEnabled() &&
-		lbConfig.LoadBalancerUsesDSR() &&
+		option.Config.LoadBalancerUsesDSR() &&
 		directRoutingDevice != "" &&
 		len(devices) > 1 {
 
@@ -342,6 +373,16 @@ func finishKubeProxyReplacementInit(logger *slog.Logger, sysctl sysctl.Sysctl, d
 	}
 
 	return nil
+}
+
+// disableNodePort disables BPF NodePort and friends who are dependent from
+// the latter.
+func disableNodePort() {
+	option.Config.EnableNodePort = false
+	option.Config.EnableHostPort = false
+	option.Config.EnableExternalIPs = false
+	option.Config.EnableSVCSourceRangeCheck = false
+	option.Config.EnableHostLegacyRouting = true
 }
 
 // markHostExtension tells the socket LB that MKE managed containers belong

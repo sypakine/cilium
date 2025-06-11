@@ -87,15 +87,14 @@ func (info *RoutingInfo) Configure(ip net.IP, mtu int, compat bool, host bool) e
 		}
 	}
 
-	var egressPriority, ifaceNum, tableID int
+	var egressPriority, tableID int
 	if compat {
 		egressPriority = linux_defaults.RulePriorityEgress
-		ifaceNum = ifindex
+		tableID = ifindex
 	} else {
 		egressPriority = linux_defaults.RulePriorityEgressv2
-		ifaceNum = info.InterfaceNumber
+		tableID = computeTableIDFromIfaceNumber(info.InterfaceNumber)
 	}
-	tableID = computeTableIDFromIfaceNumber(compat, ifaceNum)
 
 	// The condition here should mirror the condition in Delete.
 	if info.Masquerade && info.IpamMode == ipamOption.IPAMENI {
@@ -137,13 +136,12 @@ func (info *RoutingInfo) ReconcileGatewayRoutes(mtu int, compat bool, rx statedb
 		return set, fmt.Errorf("unable to find ifindex for interface MAC: %w", err)
 	}
 
-	var ifaceNum, tableID int
+	var tableID int
 	if compat {
-		ifaceNum = ifindex
+		tableID = ifindex
 	} else {
-		ifaceNum = info.InterfaceNumber
+		tableID = computeTableIDFromIfaceNumber(info.InterfaceNumber)
 	}
-	tableID = computeTableIDFromIfaceNumber(compat, ifaceNum)
 
 	// Get the desired routes.
 	gwRoutes := info.gatewayRoutes(ifindex, tableID)
@@ -251,8 +249,7 @@ func (info *RoutingInfo) installRoutes(ifindex, tableID int) error {
 // to perform a narrower search on the rule because we know it references the
 // main routing table. Due to multiple routing CIDRs, there might be more than
 // one egress rule. Deletion of any rule only proceeds if the rule matches
-// the IP & priority. In order to avoid leaving stale rules behind, all the
-// matching rules are removed.
+// the IP & priority. If more than one rule matches, then deletion is skipped.
 func Delete(logger *slog.Logger, ip netip.Addr, compat bool) error {
 	if !ip.Is4() && !ip.Is6() && !ip.IsValid() {
 		logger.Warn(
@@ -263,12 +260,12 @@ func Delete(logger *slog.Logger, ip netip.Addr, compat bool) error {
 	}
 
 	ipWithMask := netipx.AddrIPNet(ip)
+	var deleteRuleFn func(*slog.Logger, route.Rule) error
 
-	var family int
 	if ip.Is4() {
-		family = netlink.FAMILY_V4
+		deleteRuleFn = deleteRuleIPv4
 	} else {
-		family = netlink.FAMILY_V6
+		deleteRuleFn = deleteRuleIPv6
 	}
 
 	// Ingress rules
@@ -278,13 +275,7 @@ func Delete(logger *slog.Logger, ip netip.Addr, compat bool) error {
 		Table:    route.MainTable,
 	}
 
-	if err := deleteRulesFiltered(
-		logger, ingress, family,
-		deleteRuleFilter{
-			fn:  func(r netlink.Rule) bool { return true }, // no further check needed, delete all rules found
-			msg: "",
-		},
-	); err != nil {
+	if err := deleteRuleFn(logger, ingress); err != nil {
 		return fmt.Errorf("unable to delete ingress rule from main table with ip %s: %w", ipWithMask.String(), err)
 	}
 	logger.Debug("Deleted ingress rule",
@@ -298,11 +289,6 @@ func Delete(logger *slog.Logger, ip netip.Addr, compat bool) error {
 	}
 
 	// Egress rules
-	withENIRouteTableID := deleteRuleFilter{
-		fn:  func(r netlink.Rule) bool { return r.Table >= computeTableIDFromIfaceNumber(compat, 0) },
-		msg: "rule does not refer to a per-ENI routing table ID",
-	}
-
 	// The condition here should mirror the conditions in Configure.
 	info := node.GetRouterInfo()
 	if info != nil && option.Config.EnableIPv4Masquerade && option.Config.IPAM == ipamOption.IPAMENI {
@@ -321,7 +307,7 @@ func Delete(logger *slog.Logger, ip netip.Addr, compat bool) error {
 				From:     ipWithMask,
 				To:       normalizeRuleToCIDR(cidr),
 			}
-			if err := deleteRulesFiltered(logger, egress, netlink.FAMILY_V4, withENIRouteTableID); err != nil {
+			if err := deleteRuleIPv4(logger, egress); err != nil {
 				return fmt.Errorf("unable to delete egress rule with ip %s: %w", ipWithMask.String(), err)
 			}
 			logger.Debug("Deleted egress rule",
@@ -335,7 +321,7 @@ func Delete(logger *slog.Logger, ip netip.Addr, compat bool) error {
 				From:     ipWithMask,
 				To:       normalizeRuleToCIDR(cidr),
 			}
-			if err := deleteRulesFiltered(logger, egress, netlink.FAMILY_V6, withENIRouteTableID); err != nil {
+			if err := deleteRuleIPv6(logger, egress); err != nil {
 				return fmt.Errorf("unable to delete egress rule with ip %s: %w", ipWithMask.String(), err)
 			}
 			logger.Debug("Deleted egress rule",
@@ -348,8 +334,7 @@ func Delete(logger *slog.Logger, ip netip.Addr, compat bool) error {
 			Priority: priority,
 			From:     ipWithMask,
 		}
-		if err := deleteRulesFiltered(
-			logger, egress, family, withENIRouteTableID); err != nil {
+		if err := deleteRuleFn(logger, egress); err != nil {
 			return fmt.Errorf("unable to delete egress rule with ip %s: %w", ipWithMask.String(), err)
 		}
 		logger.Debug("Deleted egress rule",
@@ -378,37 +363,39 @@ func Delete(logger *slog.Logger, ip netip.Addr, compat bool) error {
 	return nil
 }
 
-type deleteRuleFilter struct {
-	fn  func(r netlink.Rule) bool
-	msg string
+func deleteRuleIPv4(logger *slog.Logger, r route.Rule) error {
+	return deleteRule(logger, r, netlink.FAMILY_V4)
 }
 
-func deleteRulesFiltered(logger *slog.Logger, template route.Rule, family int, filters ...deleteRuleFilter) error {
-	rules, err := route.ListRules(family, &template)
+func deleteRuleIPv6(logger *slog.Logger, r route.Rule) error {
+	return deleteRule(logger, r, netlink.FAMILY_V6)
+}
+
+func deleteRule(logger *slog.Logger, r route.Rule, family int) error {
+	rules, err := route.ListRules(family, &r)
 	if err != nil {
 		return err
 	}
 
-	if len(rules) == 0 {
-		logger.Warn("No rule matching found", logfields.Rule, template)
-		return errors.New("no rule found to delete")
+	length := len(rules)
+	switch {
+	case length > 1:
+		logger.Warn(
+			"Found too many rules matching, skipping deletion",
+			logfields.Candidates, rules,
+			logfields.Rule, r,
+		)
+		return errors.New("unexpected number of rules found to delete")
+	case length == 1:
+		return route.DeleteRule(family, r)
 	}
 
-	var errs []error
-next:
-	for _, rule := range rules {
-		for _, filter := range filters {
-			if !filter.fn(rule) {
-				logger.Info("Skipping deletion of matching rule",
-					logfields.Rule, rule,
-					logfields.Message, filter.msg,
-				)
-				continue next
-			}
-		}
-		errs = append(errs, netlink.RuleDel(&rule))
-	}
-	return errors.Join(errs...)
+	logger.Warn(
+		"No rule matching found",
+		logfields.Rule, r,
+	)
+
+	return errors.New("no rule found to delete")
 }
 
 // retrieveIfIndexFromMAC finds the corresponding device index (ifindex) for a
@@ -453,10 +440,7 @@ func retrieveIfIndexFromMAC(mac mac.MAC, mtu int) (int, error) {
 
 // computeTableIDFromIfaceNumber returns a computed per-ENI route table ID for the given
 // ENI interface number.
-func computeTableIDFromIfaceNumber(compat bool, num int) int {
-	if compat {
-		return num
-	}
+func computeTableIDFromIfaceNumber(num int) int {
 	return linux_defaults.RouteTableInterfacesOffset + num
 }
 

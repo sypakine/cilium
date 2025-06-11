@@ -4,6 +4,7 @@
 package kafka
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -37,7 +38,7 @@ func Test_kafkaHandler_Status(t *testing.T) {
 }
 
 func Test_kafkaHandler_ProcessFlow(t *testing.T) {
-	ctx := t.Context()
+	ctx := context.Background()
 	plugin := kafkaPlugin{}
 	handler := plugin.NewHandler()
 	options := &api.MetricConfig{

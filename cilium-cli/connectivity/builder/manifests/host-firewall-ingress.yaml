@@ -16,4 +16,3 @@ spec:
         operator: NotIn
         values:
         - client
-      - { key: io.cilium.k8s.policy.cluster, operator: Exists }

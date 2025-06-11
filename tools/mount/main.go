@@ -8,7 +8,6 @@ import (
 	"os"
 
 	"github.com/cilium/cilium/pkg/cgroups"
-	"github.com/cilium/cilium/pkg/logging"
 )
 
 func main() {
@@ -21,5 +20,5 @@ func main() {
 	// This program is executed by an init container so we purposely don't
 	// exit with any error codes. In case of errors, the function will log warnings,
 	// but we don't block cilium agent pod from running.
-	cgroups.CheckOrMountCgrpFS(logging.DefaultSlogLogger, cgroupMountPoint)
+	cgroups.CheckOrMountCgrpFS(cgroupMountPoint)
 }

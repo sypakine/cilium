@@ -15,10 +15,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"github.com/cilium/hive/cell"
-	"github.com/cilium/hive/job"
-
 	cmtypes "github.com/cilium/cilium/pkg/clustermesh/types"
+	"github.com/cilium/cilium/pkg/controller"
 	"github.com/cilium/cilium/pkg/fqdn"
 	"github.com/cilium/cilium/pkg/fqdn/dns"
 	"github.com/cilium/cilium/pkg/fqdn/matchpattern"
@@ -58,6 +56,8 @@ type manager struct {
 	// Cleared by CompleteBoostrap
 	restoredPrefixes sets.Set[netip.Prefix]
 
+	manager *controller.Manager
+
 	// list of locks used as coordination points for name updates
 	// see LockName() for details.
 	nameLocks []*lock.Mutex
@@ -76,31 +76,12 @@ func New(params ManagerParams) *manager {
 		params:       params,
 		allSelectors: make(map[api.FQDNSelector]*regexp.Regexp),
 		cache:        cache,
+		manager:      controller.NewManager(),
 		nameLocks:    make([]*lock.Mutex, params.Config.DNSProxyLockCount),
 	}
 
 	for i := range n.nameLocks {
 		n.nameLocks[i] = &lock.Mutex{}
-	}
-
-	// Break Hive import loop -- pass the NameManager back to the SelectorCache.
-	// (optional for tests)
-	if params.PolicyRepo != nil {
-		params.PolicyRepo.GetSelectorCache().SetLocalIdentityNotifier(n)
-	}
-
-	// Set up GC and bootstrap jobs
-	if params.JobGroup != nil {
-		params.JobGroup.Add(job.Timer(
-			dnsGCJobName,
-			n.doGC,
-			DNSGCJobInterval,
-		))
-
-		params.JobGroup.Add(job.OneShot(
-			"remove-restored-prefixes",
-			n.removeRestoredPrefixes,
-		))
 	}
 
 	return n
@@ -187,19 +168,7 @@ func (n *manager) UpdateGenerateDNS(ctx context.Context, lookupTime time.Time, n
 	return c
 }
 
-// removeRestoredPrefixes is a one-shot job. It waits for
-// all endpoints to be regenerated, then removes restored ipcache state.
-func (n *manager) removeRestoredPrefixes(ctx context.Context, _ cell.Health) error {
-	epRestorer, err := n.params.RestorerPromise.Await(ctx)
-	if err != nil {
-		n.logger.Error("Failed to get endpoint restorer", logfields.Error, err)
-		return err
-	}
-	if err := epRestorer.WaitForEndpointRestore(ctx); err != nil {
-		n.logger.Error("Failed to wait for endpoints to regenerate", logfields.Error, err)
-		return err
-	}
-
+func (n *manager) CompleteBootstrap() {
 	n.Lock()
 	defer n.Unlock()
 
@@ -234,7 +203,6 @@ func (n *manager) removeRestoredPrefixes(ctx context.Context, _ cell.Health) err
 			)
 		}
 	}
-	return nil
 }
 
 // updateDNSIPs updates the IPs for a DNS name. It returns whether the name's IPs

@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"iter"
-	"log/slog"
 	"net"
 	"net/netip"
 
@@ -36,7 +35,6 @@ const syncHostIPsInterval = time.Minute
 type syncHostIPsParams struct {
 	cell.In
 
-	Logger        *slog.Logger
 	Jobs          job.Registry
 	Health        cell.Health
 	DB            *statedb.DB
@@ -73,8 +71,9 @@ func newSyncHostIPs(lc cell.Lifecycle, p syncHostIPsParams) *syncHostIPs {
 		return s
 	}
 
-	g := p.Jobs.NewGroup(p.Health, lc)
+	g := p.Jobs.NewGroup(p.Health)
 	g.Add(job.OneShot("sync-hostips", s.loop))
+	lc.Append(g)
 
 	return s
 }
@@ -99,7 +98,7 @@ func (s *syncHostIPs) loop(ctx context.Context, health cell.Health) error {
 
 		err := s.sync(addrs)
 		if err != nil {
-			s.params.Logger.Error("Failed to sync host IPs, retrying later", logfields.Error, err)
+			log.WithError(err).Errorf("Failed to sync host IPs, retrying later")
 			health.Degraded("Failed to sync host IPs", err)
 		} else {
 			health.OK("Synchronized")
@@ -187,10 +186,7 @@ func (s *syncHostIPs) sync(addrs iter.Seq2[tables.NodeAddress, statedb.Revision]
 				return fmt.Errorf("Unable to add host entry to endpoint map: %w", err)
 			}
 			if added {
-				s.params.Logger.Debug(
-					"Added local ip to endpoint map",
-					logfields.IPAddr, ipIDLblsPair.IP,
-				)
+				log.WithField(logfields.IPAddr, ipIDLblsPair.IP).Debugf("Added local ip to endpoint map")
 			}
 		}
 
@@ -213,10 +209,7 @@ func (s *syncHostIPs) sync(addrs iter.Seq2[tables.NodeAddress, statedb.Revision]
 			if err := lxcmap.DeleteEntry(ip); err != nil {
 				return fmt.Errorf("unable to delete obsolete host IP: %w", err)
 			} else {
-				s.params.Logger.Debug(
-					"Removed outdated host IP from endpoint map",
-					logfields.IPAddr, hostIP,
-				)
+				log.Debugf("Removed outdated host IP %s from endpoint map", hostIP)
 			}
 			p := cmtypes.NewLocalPrefixCluster(ippkg.IPToNetPrefix(ip))
 			s.params.IPCache.RemoveMetadata(p, daemonResourceID, labels.LabelHost)

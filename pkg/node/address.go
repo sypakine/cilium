@@ -173,15 +173,15 @@ func clone(ip net.IP) net.IP {
 	return dup
 }
 
-// GetServiceLoopbackIPv4 returns the service loopback IPv4 address of this node.
-func GetServiceLoopbackIPv4(logger *slog.Logger) net.IP {
-	return getLocalNode(logger).ServiceLoopbackIPv4
+// GetIPv4Loopback returns the loopback IPv4 address of this node.
+func GetIPv4Loopback(logger *slog.Logger) net.IP {
+	return getLocalNode(logger).IPv4Loopback
 }
 
-// SetIPv4Loopback sets the service loopback IPv4 address of this node.
-func SetServiceLoopbackIPv4(ip net.IP) {
+// SetIPv4Loopback sets the loopback IPv4 address of this node.
+func SetIPv4Loopback(ip net.IP) {
 	localNode.Update(func(n *LocalNode) {
-		n.ServiceLoopbackIPv4 = ip
+		n.IPv4Loopback = ip
 	})
 }
 

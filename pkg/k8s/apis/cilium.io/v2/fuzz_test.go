@@ -15,8 +15,7 @@ func FuzzCiliumNetworkPolicyParse(f *testing.F) {
 		ff := fuzz.NewConsumer(data)
 		r := &CiliumNetworkPolicy{}
 		ff.GenerateStruct(r)
-		clusterName, _ := ff.GetString()
-		_, _ = r.Parse(hivetest.Logger(t), clusterName)
+		_, _ = r.Parse(hivetest.Logger(t))
 	})
 }
 
@@ -25,7 +24,6 @@ func FuzzCiliumClusterwideNetworkPolicyParse(f *testing.F) {
 		ff := fuzz.NewConsumer(data)
 		r := &CiliumClusterwideNetworkPolicy{}
 		ff.GenerateStruct(r)
-		clusterName, _ := ff.GetString()
-		_, _ = r.Parse(hivetest.Logger(t), clusterName)
+		_, _ = r.Parse(hivetest.Logger(t))
 	})
 }

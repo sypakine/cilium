@@ -4,6 +4,7 @@
 package filters
 
 import (
+	"context"
 	"testing"
 
 	flowpb "github.com/cilium/cilium/api/v1/flow"
@@ -91,7 +92,7 @@ func TestPortFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fl, err := BuildFilterList(t.Context(), tt.args.f, []OnBuildFilter{&PortFilter{}})
+			fl, err := BuildFilterList(context.Background(), tt.args.f, []OnBuildFilter{&PortFilter{}})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("\"%s\" error = %v, wantErr %v", tt.name, err, tt.wantErr)
 				return

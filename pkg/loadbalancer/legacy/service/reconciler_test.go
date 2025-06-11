@@ -54,18 +54,20 @@ func TestServiceReconciler(t *testing.T) {
 	)
 
 	h := hive.New(
-		cell.Provide(
-			tables.NewNodeAddressTable,
-			statedb.RWTable[tables.NodeAddress].ToTable,
-			source.NewSources,
+		cell.Module("test", "test",
+			cell.Provide(
+				tables.NewNodeAddressTable,
+				statedb.RWTable[tables.NodeAddress].ToTable,
+				source.NewSources,
+			),
+			cell.Invoke(statedb.RegisterTable[tables.NodeAddress]),
+			cell.Provide(func() syncNodePort { return mock }),
+			cell.Invoke(registerServiceReconciler),
+			cell.Invoke(func(d *statedb.DB, na statedb.RWTable[tables.NodeAddress]) {
+				db = d
+				nodeAddrs = na
+			}),
 		),
-		cell.Invoke(statedb.RegisterTable[tables.NodeAddress]),
-		cell.Provide(func() syncNodePort { return mock }),
-		cell.Invoke(registerServiceReconciler),
-		cell.Invoke(func(d *statedb.DB, na statedb.RWTable[tables.NodeAddress]) {
-			db = d
-			nodeAddrs = na
-		}),
 	)
 
 	tlog := hivetest.Logger(t)

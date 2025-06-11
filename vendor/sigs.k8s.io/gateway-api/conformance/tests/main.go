@@ -16,10 +16,6 @@ limitations under the License.
 
 package tests
 
-import (
-	"slices"
+import "sigs.k8s.io/gateway-api/conformance/utils/suite"
 
-	meshtests "sigs.k8s.io/gateway-api/conformance/tests/mesh"
-)
-
-var ConformanceTests = slices.Clone(meshtests.MeshConformanceTests)
+var ConformanceTests []suite.ConformanceTest

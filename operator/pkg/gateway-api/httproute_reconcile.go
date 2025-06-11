@@ -28,7 +28,7 @@ import (
 func (r *httpRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	scopedLog := r.logger.With(
 		logfields.Controller, httpRoute,
-		logfields.ParentResource, req.NamespacedName,
+		logfields.Resource, req.NamespacedName,
 	)
 	scopedLog.Info("Reconciling HTTPRoute")
 

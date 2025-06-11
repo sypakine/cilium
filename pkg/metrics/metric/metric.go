@@ -6,20 +6,16 @@ package metric
 import (
 	"fmt"
 	"maps"
-	"os"
 	"slices"
-	"strconv"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sirupsen/logrus"
 
+	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/metrics/metric/collections"
 )
 
-var invalidMetricValueDetectionEnabled = false
-
-func init() {
-	invalidMetricValueDetectionEnabled, _ = strconv.ParseBool(os.Getenv("CILIUM_INVALID_METRIC_VALUE_DETECTOR"))
-}
+var logger = logrus.WithField(logfields.LogSubsys, "metric")
 
 // WithMetadata is the interface implemented by any metric defined in this package. These typically embed existing
 // prometheus metric types and add additional metadata. In addition, these metrics have the concept of being enabled
@@ -60,11 +56,12 @@ func (b *metric) checkLabelValues(lvs ...string) {
 	if b.labels == nil {
 		return
 	}
-
-	if invalidMetricValueDetectionEnabled {
-		if err := b.labels.checkLabelValues(lvs); err != nil {
-			panic("metric label constraints violated for metric " + b.opts.Name + ": " + err.Error())
-		}
+	if err := b.labels.checkLabelValues(lvs); err != nil {
+		logger.WithError(err).
+			WithFields(logrus.Fields{
+				"metric": b.opts.Name,
+			}).
+			Warning("metric label constraints violated, metric will still be collected")
 	}
 }
 
@@ -73,10 +70,12 @@ func (b *metric) checkLabels(labels prometheus.Labels) {
 		return
 	}
 
-	if invalidMetricValueDetectionEnabled {
-		if err := b.labels.checkLabels(labels); err != nil {
-			panic("metric label constraints violated for metric " + b.opts.Name + ": " + err.Error())
-		}
+	if err := b.labels.checkLabels(labels); err != nil {
+		logger.WithError(err).
+			WithFields(logrus.Fields{
+				"metric": b.opts.Name,
+			}).
+			Warning("metric label constraints violated, metric will still be collected")
 	}
 }
 

@@ -15,7 +15,7 @@
 package logutil
 
 import (
-	"slices"
+	"sort"
 	"time"
 
 	"go.uber.org/zap"
@@ -43,7 +43,7 @@ var DefaultZapLoggerConfig = zap.Config{
 		Thereafter: 100,
 	},
 
-	Encoding: DefaultLogFormat,
+	Encoding: "json",
 
 	// copied from "zap.NewProductionEncoderConfig" with some updates
 	EncoderConfig: zapcore.EncoderConfig{
@@ -72,22 +72,37 @@ var DefaultZapLoggerConfig = zap.Config{
 
 // MergeOutputPaths merges logging output paths, resolving conflicts.
 func MergeOutputPaths(cfg zap.Config) zap.Config {
-	cfg.OutputPaths = mergePaths(cfg.OutputPaths)
-	cfg.ErrorOutputPaths = mergePaths(cfg.ErrorOutputPaths)
-	return cfg
-}
+	outputs := make(map[string]struct{})
+	for _, v := range cfg.OutputPaths {
+		outputs[v] = struct{}{}
+	}
+	outputSlice := make([]string, 0)
+	if _, ok := outputs["/dev/null"]; ok {
+		// "/dev/null" to discard all
+		outputSlice = []string{"/dev/null"}
+	} else {
+		for k := range outputs {
+			outputSlice = append(outputSlice, k)
+		}
+	}
+	cfg.OutputPaths = outputSlice
+	sort.Strings(cfg.OutputPaths)
 
-func mergePaths(old []string) []string {
-	if len(old) == 0 {
-		// the original implementation ensures the result is non-nil
-		return []string{}
+	errOutputs := make(map[string]struct{})
+	for _, v := range cfg.ErrorOutputPaths {
+		errOutputs[v] = struct{}{}
 	}
-	// use "/dev/null" to discard all
-	if slices.Contains(old, "/dev/null") {
-		return []string{"/dev/null"}
+	errOutputSlice := make([]string, 0)
+	if _, ok := errOutputs["/dev/null"]; ok {
+		// "/dev/null" to discard all
+		errOutputSlice = []string{"/dev/null"}
+	} else {
+		for k := range errOutputs {
+			errOutputSlice = append(errOutputSlice, k)
+		}
 	}
-	// clone a new one; don't modify the original, in case it matters.
-	dup := slices.Clone(old)
-	slices.Sort(dup)
-	return slices.Compact(dup)
+	cfg.ErrorOutputPaths = errOutputSlice
+	sort.Strings(cfg.ErrorOutputPaths)
+
+	return cfg
 }

@@ -609,7 +609,7 @@ bpf:
   # @schema
   policyStatsMapMax: 65536
   # @schema
-  # type: [null, number, string]
+  # type: [null, number]
   # @schema
   # -- (float64) Configure auto-sizing for all BPF maps based on available memory.
   # ref: https://docs.cilium.io/en/stable/network/ebpf/maps/
@@ -747,16 +747,12 @@ cni:
   # readCniConf: /host/etc/cni/net.d/05-sample.conflist.input
 
   # -- When defined, configMap will mount the provided value as ConfigMap and
-  # interpret the 'cni.configMapKey' value as CNI configuration file and write it
-  # when the agent starts up.
-  configMap: ""
+  # interpret the cniConf variable as CNI configuration file and write it
+  # when the agent starts up
+  # configMap: cni-configuration
 
   # -- Configure the key in the CNI ConfigMap to read the contents of
-  # the CNI configuration from. For this to be effective, the 'cni.configMap'
-  # parameter must be specified too.
-  # Note that the 'cni.configMap' parameter is the name of the ConfigMap, while
-  # 'cni.configMapKey' is the name of the key in the ConfigMap data containing
-  # the actual configuration.
+  # the CNI configuration from.
   configMapKey: cni-config
   # -- Configure the path to where to mount the ConfigMap inside the agent pod.
   confFileMountPath: /tmp/cni-configuration
@@ -844,6 +840,14 @@ daemon:
 # program. When not specified, probing will automatically detect devices that have
 # a non-local route. This should be used only when autodetection is not suitable.
 # devices: ""
+
+# -- Enables experimental support for the detection of new and removed datapath
+# devices. When devices change the eBPF datapath is reloaded and services updated.
+# If "devices" is set then only those devices, or devices matching a wildcard will
+# be considered.
+#
+# This option has been deprecated and is a no-op.
+enableRuntimeDeviceDetection: true
 
 # -- Forces the auto-detection of devices, even if specific devices are explicitly listed
 forceDeviceDetection: false
@@ -1139,6 +1143,9 @@ eni:
   # -- Filter via AWS EC2 Instance tags (k=v) which will dictate which AWS EC2 Instances
   # are going to be used to create new ENIs
   instanceTagsFilter: []
+externalIPs:
+  # -- Enable ExternalIPs service support.
+  enabled: false
 # fragmentTracking enables IPv4 fragment tracking support in the datapath.
 # fragmentTracking: true
 gke:
@@ -1153,6 +1160,9 @@ healthCheckICMPFailureThreshold: 3
 # -- Configure the host firewall.
 hostFirewall:
   # -- Enables the enforcement of host policies in the eBPF datapath.
+  enabled: false
+hostPort:
+  # -- Enable hostPort service support.
   enabled: false
 # -- Configure socket LB
 socketLB:
@@ -3275,8 +3285,6 @@ clustermesh:
   enableEndpointSliceSynchronization: false
   # -- Enable Multi-Cluster Services API support
   enableMCSAPISupport: false
-  # -- Control whether policy rules assume by default the local cluster if not explicitly selected
-  policyDefaultLocalCluster: false
 
   # -- Annotations to be added to all top-level clustermesh objects (resources under templates/clustermesh-apiserver and templates/clustermesh-config)
   annotations: {}
@@ -3377,7 +3385,7 @@ clustermesh:
 
     kvstoremesh:
       # -- Enable KVStoreMesh. KVStoreMesh caches the information retrieved
-      # from the remote clusters in the local etcd instance (deprecated - KVStoreMesh will always be enabled once the option is removed).
+      # from the remote clusters in the local etcd instance.
       enabled: true
 
       # -- TCP port for the KVStoreMesh health API.

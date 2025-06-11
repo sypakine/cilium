@@ -271,9 +271,11 @@ func TestParseServiceWithServiceTypeExposure(t *testing.T) {
 }
 
 func TestParseService(t *testing.T) {
-	lbcfg := loadbalancer.DefaultConfig
-	lbcfg.LBMode = loadbalancer.LBModeSNAT
-
+	oldDefaultLbMode := option.Config.NodePortMode
+	option.Config.NodePortMode = option.NodePortModeSNAT
+	defer func() {
+		option.Config.NodePortMode = oldDefaultLbMode
+	}()
 	objMeta := slim_metav1.ObjectMeta{
 		Name:      "foo",
 		Namespace: "bar",
@@ -292,6 +294,8 @@ func TestParseService(t *testing.T) {
 			Type: slim_corev1.ServiceTypeClusterIP,
 		},
 	}
+
+	lbcfg := loadbalancer.DefaultConfig
 
 	id, svc := ParseService(hivetest.Logger(t), lbcfg, k8sSvc, nil)
 	require.Equal(t, ServiceID{Namespace: "bar", Name: "foo"}, id)

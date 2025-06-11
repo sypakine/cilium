@@ -4,6 +4,7 @@
 package observe
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"strings"
@@ -28,7 +29,7 @@ func Test_getFlowsBasic(t *testing.T) {
 	}
 	server := NewIOReaderObserver(strings.NewReader(strings.Join(flowStrings, "\n") + "\n"))
 	req := observerpb.GetFlowsRequest{}
-	client, err := server.GetFlows(t.Context(), &req)
+	client, err := server.GetFlows(context.Background(), &req)
 	require.NoError(t, err)
 	for range flows {
 		_, err = client.Recv()
@@ -64,7 +65,7 @@ func Test_getFlowsTimeRange(t *testing.T) {
 		Since: &timestamppb.Timestamp{Seconds: 50},
 		Until: &timestamppb.Timestamp{Seconds: 150},
 	}
-	client, err := server.GetFlows(t.Context(), &req)
+	client, err := server.GetFlows(context.Background(), &req)
 	require.NoError(t, err)
 	res, err := client.Recv()
 	require.NoError(t, err)
@@ -99,7 +100,7 @@ func Test_getFlowsLast(t *testing.T) {
 		Number: 2,
 		First:  false,
 	}
-	client, err := server.GetFlows(t.Context(), &req)
+	client, err := server.GetFlows(context.Background(), &req)
 	require.NoError(t, err)
 	res, err := client.Recv()
 	require.NoError(t, err)
@@ -137,7 +138,7 @@ func Test_getFlowsFirst(t *testing.T) {
 		Number: 2,
 		First:  true,
 	}
-	client, err := server.GetFlows(t.Context(), &req)
+	client, err := server.GetFlows(context.Background(), &req)
 	require.NoError(t, err)
 	res, err := client.Recv()
 	require.NoError(t, err)
@@ -178,7 +179,7 @@ func Test_getFlowsFilter(t *testing.T) {
 			},
 		},
 	}
-	client, err := server.GetFlows(t.Context(), &req)
+	client, err := server.GetFlows(context.Background(), &req)
 	require.NoError(t, err)
 	res, err := client.Recv()
 	require.NoError(t, err)
@@ -211,7 +212,7 @@ func Test_UnknownField(t *testing.T) {
 	}
 	// server and client setup.
 	server := NewIOReaderObserver(strings.NewReader(sb.String()))
-	client, err := server.GetFlows(t.Context(), &observerpb.GetFlowsRequest{})
+	client, err := server.GetFlows(context.Background(), &observerpb.GetFlowsRequest{})
 	require.NoError(t, err)
 	// logger setup.
 	logger.Initialize(slog.NewTextHandler(&sb, nil))

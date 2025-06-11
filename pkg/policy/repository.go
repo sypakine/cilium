@@ -171,11 +171,10 @@ func (p *Repository) addListLocked(rules api.Rules) (ruleSlice, uint64) {
 func (p *Repository) insert(r *rule) {
 	p.rules[r.key] = r
 	p.metricsManager.AddRule(r.Rule)
-	namespace := r.key.resource.Namespace()
-	if _, ok := p.rulesByNamespace[namespace]; !ok {
-		p.rulesByNamespace[namespace] = sets.New[ruleKey]()
+	if _, ok := p.rulesByNamespace[r.key.resource.Namespace()]; !ok {
+		p.rulesByNamespace[r.key.resource.Namespace()] = sets.New[ruleKey]()
 	}
-	p.rulesByNamespace[namespace].Insert(r.key)
+	p.rulesByNamespace[r.key.resource.Namespace()].Insert(r.key)
 	rid := r.key.resource
 	if len(rid) > 0 {
 		if p.rulesByResource[rid] == nil {
@@ -194,10 +193,9 @@ func (p *Repository) del(key ruleKey) {
 	}
 	p.metricsManager.DelRule(r.Rule)
 	delete(p.rules, key)
-	namespace := r.key.resource.Namespace()
-	p.rulesByNamespace[namespace].Delete(key)
-	if len(p.rulesByNamespace[namespace]) == 0 {
-		delete(p.rulesByNamespace, namespace)
+	p.rulesByNamespace[key.resource.Namespace()].Delete(key)
+	if len(p.rulesByNamespace[key.resource.Namespace()]) == 0 {
+		delete(p.rulesByNamespace, key.resource.Namespace())
 	}
 
 	rid := key.resource

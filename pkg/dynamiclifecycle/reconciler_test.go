@@ -10,12 +10,14 @@ import (
 
 	"github.com/cilium/hive/cell"
 	"github.com/cilium/hive/hivetest"
+	"github.com/cilium/hive/job"
 	"github.com/cilium/statedb"
 	"github.com/cilium/statedb/reconciler"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/cilium/cilium/pkg/dynamicconfig"
 	"github.com/cilium/cilium/pkg/hive"
+	"github.com/cilium/cilium/pkg/hive/health/types"
 	"github.com/cilium/cilium/pkg/time"
 )
 
@@ -256,6 +258,12 @@ func fixture(t *testing.T) (*hive.Hive, *statedb.DB, statedb.RWTable[dynamicconf
 			},
 			func(table statedb.RWTable[*DynamicFeature]) statedb.Table[*DynamicFeature] {
 				return table
+			},
+			func(lc cell.Lifecycle, p types.Provider, jr job.Registry) job.Group {
+				h := p.ForModule(cell.FullModuleID{"test"})
+				jg := jr.NewGroup(h)
+				lc.Append(jg)
+				return jg
 			},
 			func() config {
 				return config{

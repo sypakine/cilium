@@ -1,6 +1,7 @@
 # Test the reflection of the cilium-config ConfigMap
 
 hive/start
+db/initialized
 
 # Add cilium-config with keys foo and baz
 k8s/add cilium-config.yaml

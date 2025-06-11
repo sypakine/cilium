@@ -17,6 +17,7 @@ const (
 
 // CiliumTestConfigType holds all of the configurable elements of the testsuite
 type CiliumTestConfigType struct {
+	Reprovision bool
 	// HoldEnvironment leaves the test infrastructure in place on failure
 	HoldEnvironment bool
 	// PassCLIEnvironment passes through the environment invoking the gingko
@@ -43,8 +44,9 @@ type CiliumTestConfigType struct {
 
 	// Multinode enables the running of tests that involve more than one
 	// node. If false, some tests will silently skip multinode checks.
-	Multinode bool
-	Help      bool
+	Multinode      bool
+	RunQuarantined bool
+	Help           bool
 }
 
 // CiliumTestConfig holds the global configuration of commandline flags
@@ -54,6 +56,7 @@ var CiliumTestConfig = CiliumTestConfigType{}
 // ParseFlags parses commandline flags relevant to testing.
 func (c *CiliumTestConfigType) ParseFlags() {
 	flagset := flag.NewFlagSet("cilium", flag.ExitOnError)
+	flagset.BoolVar(&c.Reprovision, "cilium.provision", false, "(deprecated)")
 	flagset.BoolVar(&c.HoldEnvironment, "cilium.holdEnvironment", false,
 		"On failure, hold the environment in its current state")
 	flagset.BoolVar(&c.PassCLIEnvironment, "cilium.passCLIEnvironment", false,
@@ -90,6 +93,8 @@ func (c *CiliumTestConfigType) ParseFlags() {
 		"Registry credentials to be used to download images")
 	flagset.BoolVar(&c.Multinode, "cilium.multinode", true,
 		"Enable tests across multiple nodes. If disabled, such tests may silently pass")
+	flagset.BoolVar(&c.RunQuarantined, "cilium.runQuarantined", false,
+		"Run tests that are under quarantine.")
 	flagset.BoolVar(&c.Help, "cilium.help", false, "Display this help message.")
 	flagset.StringVar(&c.InstallHelmOverrides, "cilium.install-helm-overrides", "",
 		"Comma separated list of cilium install helm --set overrides. "+

@@ -9,18 +9,21 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"sync/atomic"
 
 	"github.com/cilium/ebpf/perf"
+	"github.com/sirupsen/logrus"
 
 	"github.com/cilium/cilium/pkg/byteorder"
 	"github.com/cilium/cilium/pkg/lock"
+	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/maps/signalmap"
 	"github.com/cilium/cilium/pkg/metrics"
 )
+
+var log = logging.DefaultLogger.WithField(logfields.LogSubsys, "signal")
 
 type SignalType uint32
 
@@ -66,7 +69,6 @@ type SignalManager interface {
 }
 
 type signalManager struct {
-	logger    *slog.Logger
 	signalmap signalmap.Map
 	handlers  [SignalTypeMax]SignalHandler
 	events    signalmap.PerfReader
@@ -79,9 +81,8 @@ type signalManager struct {
 	activeSignals atomic.Uint64
 }
 
-func newSignalManager(signalMap signalmap.Map, logger *slog.Logger) *signalManager {
+func newSignalManager(signalMap signalmap.Map) *signalManager {
 	return &signalManager{
-		logger:    logger,
 		signalmap: signalMap,
 		done:      make(chan struct{}),
 	}
@@ -135,15 +136,12 @@ func (sm *signalManager) signalReceive(msg *perf.Record) {
 	var which SignalType
 	reader := bytes.NewReader(msg.RawSample)
 	if err := binary.Read(reader, byteorder.Native, &which); err != nil {
-		sm.logger.Warn("cannot parse signal type from BPF datapath", logfields.Error, err)
+		log.WithError(err).Warning("cannot parse signal type from BPF datapath")
 		return
 	}
 
 	if which >= SignalTypeMax {
-		sm.logger.Warn(
-			"invalid signal type",
-			logfields.Signal, which,
-		)
+		log.WithField(logfields.Signal, which).Warning("invalid signal type")
 		return
 	}
 
@@ -164,11 +162,7 @@ func (sm *signalManager) signalReceive(msg *perf.Record) {
 		if errors.Is(err, ErrFullChannel) {
 			status = "channel overflow"
 		} else {
-			sm.logger.Warn(
-				"cannot parse signal data from BPF datapath",
-				logfields.Error, err,
-				logfields.Signal, name,
-			)
+			log.WithError(err).WithField(logfields.Signal, name).Warning("cannot parse signal data from BPF datapath")
 			status = "parse error"
 		}
 	}
@@ -267,7 +261,7 @@ func (sm *signalManager) start() error {
 	}
 
 	go func() {
-		sm.logger.Info("Datapath signal listener running")
+		log.Info("Datapath signal listener running")
 		for {
 			record, err := sm.events.Read()
 			if err != nil {
@@ -275,11 +269,9 @@ func (sm *signalManager) start() error {
 					break
 				}
 				signalCollectMetrics("", "", "error")
-				sm.logger.Error(
-					"failed to read event",
-					logfields.Error, err,
-					logfields.BPFMapName, signalmap.MapName,
-				)
+				log.WithError(err).WithFields(logrus.Fields{
+					logfields.BPFMapName: signalmap.MapName,
+				}).Error("failed to read event")
 				continue
 			}
 
@@ -289,7 +281,7 @@ func (sm *signalManager) start() error {
 			}
 			sm.signalReceive(&record)
 		}
-		sm.logger.Info("Datapath signal listener exiting")
+		log.Info("Datapath signal listener exiting")
 
 		// Close registered signal channels
 		for i, handler := range sm.handlers {
@@ -299,7 +291,7 @@ func (sm *signalManager) start() error {
 			}
 		}
 		close(sm.done)
-		sm.logger.Info("Datapath signal listener done")
+		log.Info("Datapath signal listener done")
 	}()
 
 	return nil

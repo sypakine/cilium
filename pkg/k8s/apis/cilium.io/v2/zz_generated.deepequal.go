@@ -1269,23 +1269,6 @@ func (in *CiliumEgressGatewayPolicySpec) DeepEqual(other *CiliumEgressGatewayPol
 		}
 	}
 
-	if ((in.EgressGateways != nil) && (other.EgressGateways != nil)) || ((in.EgressGateways == nil) != (other.EgressGateways == nil)) {
-		in, other := &in.EgressGateways, &other.EgressGateways
-		if other == nil {
-			return false
-		}
-
-		if len(*in) != len(*other) {
-			return false
-		} else {
-			for i, inElement := range *in {
-				if !inElement.DeepEqual(&(*other)[i]) {
-					return false
-				}
-			}
-		}
-	}
-
 	return true
 }
 

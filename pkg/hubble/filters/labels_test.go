@@ -4,6 +4,7 @@
 package filters
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -576,7 +577,7 @@ func TestLabelSelectorFilter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fl, err := BuildFilterList(t.Context(), tt.args.f, []OnBuildFilter{&LabelsFilter{}})
+			fl, err := BuildFilterList(context.Background(), tt.args.f, []OnBuildFilter{&LabelsFilter{}})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("\"%s\" error = %v, wantErr %v", tt.name, err, tt.wantErr)
 				return

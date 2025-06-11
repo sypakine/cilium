@@ -12,8 +12,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/cilium/cilium/pkg/container/cache"
-	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 )
 
@@ -327,10 +328,7 @@ func NewLabel(key string, value string, source string) Label {
 	if l.Source == LabelSourceCIDR {
 		c, err := LabelToPrefix(l.Key)
 		if err != nil {
-			logging.DefaultSlogLogger.Error("Failed to parse CIDR label: invalid prefix.",
-				logfields.Error, err,
-				logfields.Key, l.Key,
-			)
+			logrus.WithField("key", l.Key).WithError(err).Error("Failed to parse CIDR label: invalid prefix.")
 		} else {
 			l.cidr = &c
 		}
@@ -483,10 +481,7 @@ func (l *Label) UnmarshalJSON(data []byte) error {
 		if err == nil {
 			l.cidr = &c
 		} else {
-			logging.DefaultSlogLogger.Error("Failed to parse CIDR label: invalid prefix.",
-				logfields.Error, err,
-				logfields.Key, l.Key,
-			)
+			logrus.WithField("key", l.Key).WithError(err).Error("Failed to parse CIDR label: invalid prefix.")
 		}
 	}
 
@@ -524,19 +519,6 @@ func GetExtendedKeyFrom(str string) string {
 		return src + PathDelimiter + next[:i]
 	}
 	return src + PathDelimiter + next
-}
-
-type KeyExtender func(string) string
-
-// Extender to convert label keys from Cilium representation to kubernetes representation.
-// Key passed to this extender is converted to format `<source>.<key>`.
-// The extender is not idempotent, caller needs to make sure its only called once for a key.
-var DefaultKeyExtender KeyExtender = GetExtendedKeyFrom
-
-func GetSourcePrefixKeyExtender(srcPrefix string) KeyExtender {
-	return func(str string) string {
-		return srcPrefix + str
-	}
 }
 
 // Map2Labels transforms in the form: map[key(string)]value(string) into Labels. The
@@ -828,15 +810,11 @@ func parseLabel(str string, delim byte) (lbl Label) {
 
 	if lbl.Source == LabelSourceCIDR {
 		if lbl.Value != "" {
-			logging.DefaultSlogLogger.Error("Invalid CIDR label: labels with source cidr cannot have values.",
-				logfields.Label, lbl,
-			)
+			logrus.WithField(logfields.Label, lbl.String()).Error("Invalid CIDR label: labels with source cidr cannot have values.")
 		}
 		c, err := LabelToPrefix(lbl.Key)
 		if err != nil {
-			logging.DefaultSlogLogger.Error("Failed to parse CIDR label: invalid prefix.",
-				logfields.Label, lbl,
-			)
+			logrus.WithField(logfields.Label, str).WithError(err).Error("Failed to parse CIDR label: invalid prefix.")
 		} else {
 			lbl.cidr = &c
 		}

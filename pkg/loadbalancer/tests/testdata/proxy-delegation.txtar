@@ -2,6 +2,7 @@
 
 # Start the test application
 hive start
+db/initialized
 
 # Set the local node IP address. This is used when filtering for local backends
 # when proxy delegation is set.

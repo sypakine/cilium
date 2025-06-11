@@ -49,7 +49,6 @@ type profile struct {
 	Mode            string `json:"mode"`
 	AccessKeyID     string `json:"access_key_id"`
 	AccessKeySecret string `json:"access_key_secret"`
-	SecurityToken   string `json:"sts_token"`
 	RegionID        string `json:"region_id"`
 	RoleArn         string `json:"ram_role_arn"`
 	RoleSessionName string `json:"ram_session_name"`
@@ -115,12 +114,6 @@ func (provider *CLIProfileCredentialsProvider) getCredentialsProvider(conf *conf
 		credentialsProvider, err = NewStaticAKCredentialsProviderBuilder().
 			WithAccessKeyId(p.AccessKeyID).
 			WithAccessKeySecret(p.AccessKeySecret).
-			Build()
-	case "StsToken":
-		credentialsProvider, err = NewStaticSTSCredentialsProviderBuilder().
-			WithAccessKeyId(p.AccessKeyID).
-			WithAccessKeySecret(p.AccessKeySecret).
-			WithSecurityToken(p.SecurityToken).
 			Build()
 	case "RamRoleArn":
 		previousProvider, err1 := NewStaticAKCredentialsProviderBuilder().

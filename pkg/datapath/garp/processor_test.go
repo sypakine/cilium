@@ -93,7 +93,10 @@ func fixture(t *testing.T, c *Config) (
 		proc     *processor
 	)
 
-	h := hive.New(
+	h := hive.New(cell.Module(
+		"test-garp-processor-cell",
+		"TestProcessorCell",
+
 		cell.Config(defaultConfig),
 
 		cell.Provide(
@@ -125,7 +128,7 @@ func fixture(t *testing.T, c *Config) (
 				proc = procParam
 			},
 		),
-	)
+	))
 
 	// Apply the config so that the GARP cell will initialise.s
 	hive.AddConfigOverride(h, func(cfg *Config) {

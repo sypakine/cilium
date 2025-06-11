@@ -4,10 +4,10 @@
 package cgroups
 
 import (
-	"log/slog"
 	"sync"
 
 	"github.com/cilium/cilium/pkg/defaults"
+	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 )
 
@@ -18,6 +18,8 @@ var (
 	// Only mount a single instance
 	cgrpMountOnce sync.Once
 )
+
+var log = logging.DefaultLogger.WithField(logfields.LogSubsys, "cgroups")
 
 // setCgroupRoot will set the path to mount cgroupv2
 func setCgroupRoot(path string) {
@@ -34,22 +36,17 @@ func GetCgroupRoot() string {
 // location. It is harmless to have multiple cgroupv2 root mounts so unlike
 // BPFFS case we simply mount at the cilium default regardless if the system
 // has another mount created by systemd or otherwise.
-func CheckOrMountCgrpFS(logger *slog.Logger, mapRoot string) {
+func CheckOrMountCgrpFS(mapRoot string) {
 	cgrpMountOnce.Do(func() {
 		if mapRoot == "" {
 			mapRoot = cgroupRoot
 		}
 
 		if err := cgrpCheckOrMountLocation(mapRoot); err != nil {
-			logger.Warn(
-				"Failed to mount cgroupv2. Any functionality that needs cgroup (e.g.: socket-based LB) will not work.",
-				logfields.Error, err,
-			)
+			log.WithError(err).
+				Warn("Failed to mount cgroupv2. Any functionality that needs cgroup (e.g.: socket-based LB) will not work.")
 		} else {
-			logger.Info(
-				"Mounted cgroupv2 filesystem",
-				logfields.Location, mapRoot,
-			)
+			log.Infof("Mounted cgroupv2 filesystem at %s", mapRoot)
 		}
 	})
 }

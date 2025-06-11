@@ -4,6 +4,7 @@
 # of quarantined backends.
 
 hive/start
+db/initialized
 
 # Add our test service and backends.
 k8s/add service.yaml endpointslice.yaml

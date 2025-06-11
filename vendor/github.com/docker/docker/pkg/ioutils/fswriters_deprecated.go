@@ -4,7 +4,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/moby/sys/atomicwriter"
+	"github.com/docker/docker/pkg/atomicwriter"
 )
 
 // NewAtomicFileWriter returns WriteCloser so that writing to it writes to a

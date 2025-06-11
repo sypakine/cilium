@@ -72,31 +72,31 @@ func NewContiguousAllocationMap(max int, rangeSpec string) *AllocationBitmap {
 
 // Allocate attempts to reserve the provided item.
 // Returns true if it was allocated, false if it was already in use
-func (r *AllocationBitmap) Allocate(offset int) bool {
+func (r *AllocationBitmap) Allocate(offset int) (bool, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
 	if r.allocated.Bit(offset) == 1 {
-		return false
+		return false, nil
 	}
 	r.allocated = r.allocated.SetBit(r.allocated, offset, 1)
 	r.count++
-	return true
+	return true, nil
 }
 
 // AllocateNext reserves one of the items from the pool.
 // (0, false, nil) may be returned if there are no items left.
-func (r *AllocationBitmap) AllocateNext() (int, bool) {
+func (r *AllocationBitmap) AllocateNext() (int, bool, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
 	next, ok := r.strategy.AllocateBit(r.allocated, r.max, r.count)
 	if !ok {
-		return 0, false
+		return 0, false, nil
 	}
 	r.count++
 	r.allocated = r.allocated.SetBit(r.allocated, next, 1)
-	return next, true
+	return next, true, nil
 }
 
 // Release releases the item back to the pool. Releasing an

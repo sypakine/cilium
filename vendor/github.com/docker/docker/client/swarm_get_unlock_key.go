@@ -4,18 +4,18 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/docker/docker/api/types"
 )
 
 // SwarmGetUnlockKey retrieves the swarm's unlock key.
-func (cli *Client) SwarmGetUnlockKey(ctx context.Context) (swarm.UnlockKeyResponse, error) {
+func (cli *Client) SwarmGetUnlockKey(ctx context.Context) (types.SwarmUnlockKeyResponse, error) {
 	resp, err := cli.get(ctx, "/swarm/unlockkey", nil, nil)
 	defer ensureReaderClosed(resp)
 	if err != nil {
-		return swarm.UnlockKeyResponse{}, err
+		return types.SwarmUnlockKeyResponse{}, err
 	}
 
-	var response swarm.UnlockKeyResponse
+	var response types.SwarmUnlockKeyResponse
 	err = json.NewDecoder(resp.Body).Decode(&response)
 	return response, err
 }

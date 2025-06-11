@@ -21,9 +21,9 @@ func TestPolicyConfig_updateMatchedEndpointIDs(t *testing.T) {
 		nodeSelectors     []api.EndpointSelector
 		dstCIDRs          []netip.Prefix
 		excludedCIDRs     []netip.Prefix
-		policyGwConfigs   []policyGatewayConfig
+		policyGwConfig    *policyGatewayConfig
 		matchedEndpoints  map[endpointID]*endpointMetadata
-		gatewayConfigs    []gatewayConfig
+		gatewayConfig     gatewayConfig
 	}
 	type args struct {
 		epDataStore           map[endpointID]*endpointMetadata
@@ -177,9 +177,9 @@ func TestPolicyConfig_updateMatchedEndpointIDs(t *testing.T) {
 				nodeSelectors:     tt.fields.nodeSelectors,
 				dstCIDRs:          tt.fields.dstCIDRs,
 				excludedCIDRs:     tt.fields.excludedCIDRs,
-				policyGwConfigs:   tt.fields.policyGwConfigs,
+				policyGwConfig:    tt.fields.policyGwConfig,
 				matchedEndpoints:  tt.fields.matchedEndpoints,
-				gatewayConfigs:    tt.fields.gatewayConfigs,
+				gatewayConfig:     tt.fields.gatewayConfig,
 			}
 			config.updateMatchedEndpointIDs(tt.args.epDataStore, tt.args.nodesAddresses2Labels)
 			assert.Len(t, config.matchedEndpoints, tt.want)

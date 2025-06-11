@@ -30,14 +30,14 @@ func NewPutStatusProbeHandler(s *Server) PutStatusProbeHandler {
 
 // Handle handles GET requests for /status .
 func (h *getStatusCache) Handle(params GetStatusParams) middleware.Responder {
-	h.logger.Debug("Handling request for /status")
+	log.Debug("Handling request for /status")
 
 	return NewGetStatusOK().WithPayload(h.GetStatusResponse())
 }
 
 // Handle handles GET requests for /status/probe .
 func (h *putStatusProbe) Handle(params PutStatusProbeParams) middleware.Responder {
-	h.logger.Debug("Handling request for /status/probe")
+	log.Debug("Handling request for /status/probe")
 
 	status, err := h.FetchStatusResponse()
 	if err != nil {

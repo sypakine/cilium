@@ -4,6 +4,7 @@
 package flows_to_world
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -51,19 +52,19 @@ func TestFlowsToWorldHandler_MatchingFlow(t *testing.T) {
 		DestinationNames: []string{"cilium.io"},
 	}
 
-	h.ProcessFlow(t.Context(), &flow)
+	h.ProcessFlow(context.Background(), &flow)
 	flow.L4 = &flowpb.Layer4{
 		Protocol: &flowpb.Layer4_UDP{UDP: &flowpb.UDP{DestinationPort: 53}},
 	}
-	h.ProcessFlow(t.Context(), &flow)
+	h.ProcessFlow(context.Background(), &flow)
 	flow.L4 = &flowpb.Layer4{
 		Protocol: &flowpb.Layer4_ICMPv4{ICMPv4: &flowpb.ICMPv4{}},
 	}
-	h.ProcessFlow(t.Context(), &flow)
+	h.ProcessFlow(context.Background(), &flow)
 	flow.L4 = &flowpb.Layer4{
 		Protocol: &flowpb.Layer4_ICMPv6{ICMPv6: &flowpb.ICMPv6{}},
 	}
-	h.ProcessFlow(t.Context(), &flow)
+	h.ProcessFlow(context.Background(), &flow)
 	expected := strings.NewReader(`# HELP hubble_flows_to_world_total Total number of flows to reserved:world
 # TYPE hubble_flows_to_world_total counter
 hubble_flows_to_world_total{destination="cilium.io",protocol="ICMPv4",source="src-a",verdict="DROPPED"} 1
@@ -92,12 +93,12 @@ func TestFlowsToWorldHandler_NonMatchingFlows(t *testing.T) {
 	assert.NoError(t, h.Init(registry, opts))
 
 	// destination is missing.
-	h.ProcessFlow(t.Context(), &flowpb.Flow{
+	h.ProcessFlow(context.Background(), &flowpb.Flow{
 		Verdict: flowpb.Verdict_FORWARDED,
 		Source:  &flowpb.Endpoint{Namespace: "src-a"},
 	})
 	// destination is not reserved:world
-	h.ProcessFlow(t.Context(), &flowpb.Flow{
+	h.ProcessFlow(context.Background(), &flowpb.Flow{
 		Verdict: flowpb.Verdict_FORWARDED,
 		Source:  &flowpb.Endpoint{Namespace: "src-a"},
 		Destination: &flowpb.Endpoint{
@@ -105,7 +106,7 @@ func TestFlowsToWorldHandler_NonMatchingFlows(t *testing.T) {
 		},
 	})
 	// L4 information is missing.
-	h.ProcessFlow(t.Context(), &flowpb.Flow{
+	h.ProcessFlow(context.Background(), &flowpb.Flow{
 		Verdict: flowpb.Verdict_FORWARDED,
 		Source:  &flowpb.Endpoint{Namespace: "src-a"},
 		Destination: &flowpb.Endpoint{
@@ -113,7 +114,7 @@ func TestFlowsToWorldHandler_NonMatchingFlows(t *testing.T) {
 		},
 	})
 	// EventType is missing.
-	h.ProcessFlow(t.Context(), &flowpb.Flow{
+	h.ProcessFlow(context.Background(), &flowpb.Flow{
 		Verdict: flowpb.Verdict_FORWARDED,
 		Source:  &flowpb.Endpoint{Namespace: "src-a"},
 		Destination: &flowpb.Endpoint{
@@ -126,7 +127,7 @@ func TestFlowsToWorldHandler_NonMatchingFlows(t *testing.T) {
 		},
 	})
 	// Drop reason is not "Policy denied".
-	h.ProcessFlow(t.Context(), &flowpb.Flow{
+	h.ProcessFlow(context.Background(), &flowpb.Flow{
 		Verdict:        flowpb.Verdict_DROPPED,
 		EventType:      &flowpb.CiliumEventType{Type: monitorAPI.MessageTypeDrop},
 		DropReasonDesc: flowpb.DropReason_STALE_OR_UNROUTABLE_IP,
@@ -142,7 +143,7 @@ func TestFlowsToWorldHandler_NonMatchingFlows(t *testing.T) {
 		DestinationNames: []string{"cilium.io"},
 	})
 	// Flow is a reply.
-	h.ProcessFlow(t.Context(), &flowpb.Flow{
+	h.ProcessFlow(context.Background(), &flowpb.Flow{
 		Verdict:   flowpb.Verdict_FORWARDED,
 		EventType: &flowpb.CiliumEventType{Type: monitorAPI.MessageTypeTrace},
 		L4: &flowpb.Layer4{
@@ -196,7 +197,7 @@ func TestFlowsToWorldHandler_AnyDrop(t *testing.T) {
 		},
 		DestinationNames: []string{"cilium.io"},
 	}
-	h.ProcessFlow(t.Context(), &flow)
+	h.ProcessFlow(context.Background(), &flow)
 	expected := strings.NewReader(`# HELP hubble_flows_to_world_total Total number of flows to reserved:world
 # TYPE hubble_flows_to_world_total counter
 hubble_flows_to_world_total{destination="cilium.io",protocol="TCP",source="src-a",verdict="DROPPED"} 1
@@ -240,19 +241,19 @@ func TestFlowsToWorldHandler_IncludePort(t *testing.T) {
 		DestinationNames: []string{"cilium.io"},
 		IsReply:          wrapperspb.Bool(false),
 	}
-	h.ProcessFlow(t.Context(), &flow)
+	h.ProcessFlow(context.Background(), &flow)
 	flow.L4 = &flowpb.Layer4{
 		Protocol: &flowpb.Layer4_UDP{
 			UDP: &flowpb.UDP{DestinationPort: 53},
 		},
 	}
-	h.ProcessFlow(t.Context(), &flow)
+	h.ProcessFlow(context.Background(), &flow)
 	flow.L4 = &flowpb.Layer4{
 		Protocol: &flowpb.Layer4_SCTP{
 			SCTP: &flowpb.SCTP{DestinationPort: 2905},
 		},
 	}
-	h.ProcessFlow(t.Context(), &flow)
+	h.ProcessFlow(context.Background(), &flow)
 	expected := strings.NewReader(`# HELP hubble_flows_to_world_total Total number of flows to reserved:world
 # TYPE hubble_flows_to_world_total counter
 hubble_flows_to_world_total{destination="cilium.io",port="2905",protocol="SCTP",source="src-a",verdict="FORWARDED"} 1
@@ -299,20 +300,20 @@ func TestFlowsToWorldHandler_SynOnly(t *testing.T) {
 		DestinationNames: []string{"cilium.io"},
 		IsReply:          wrapperspb.Bool(false),
 	}
-	h.ProcessFlow(t.Context(), &flow)
+	h.ProcessFlow(context.Background(), &flow)
 
 	// flows without is_reply field should be counted.
 	flow.IsReply = nil
-	h.ProcessFlow(t.Context(), &flow)
+	h.ProcessFlow(context.Background(), &flow)
 
 	// reply flows should not be counted
 	flow.IsReply = wrapperspb.Bool(true)
-	h.ProcessFlow(t.Context(), &flow)
+	h.ProcessFlow(context.Background(), &flow)
 
 	// Non-SYN should not be counted
 	flow.IsReply = wrapperspb.Bool(false)
 	flow.L4.GetTCP().Flags = &flowpb.TCPFlags{ACK: true}
-	h.ProcessFlow(t.Context(), &flow)
+	h.ProcessFlow(context.Background(), &flow)
 
 	expected := strings.NewReader(`# HELP hubble_flows_to_world_total Total number of flows to reserved:world
 # TYPE hubble_flows_to_world_total counter

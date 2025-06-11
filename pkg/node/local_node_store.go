@@ -38,9 +38,7 @@ type LocalNode struct {
 	IPv4NativeRoutingCIDR *cidr.CIDR
 	// v6 CIDR in which pod IPs are routable
 	IPv6NativeRoutingCIDR *cidr.CIDR
-	// ServiceLoopbackIPv4 is the source address used for SNAT when a Pod talks to
-	// itself through a Service.
-	ServiceLoopbackIPv4 net.IP
+	IPv4Loopback          net.IP
 }
 
 // LocalNodeSynchronizer specifies how to build, and keep synchronized the local

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/cilium/ebpf/perf"
-	"github.com/cilium/hive/hivetest"
 	"github.com/stretchr/testify/require"
 
 	"github.com/cilium/cilium/pkg/byteorder"
@@ -161,7 +160,6 @@ func (d SignalData) String() string {
 
 func TestLifeCycle(t *testing.T) {
 	logging.SetLogLevelToDebug()
-	logger := hivetest.Logger(t)
 
 	buf1 := new(bytes.Buffer)
 	binary.Write(buf1, byteorder.Native, SignalNatFillUp)
@@ -173,7 +171,7 @@ func TestLifeCycle(t *testing.T) {
 
 	messages := [][]byte{buf1.Bytes(), buf2.Bytes()}
 
-	sm := newSignalManager(fakesignalmap.NewFakeSignalMap(messages, time.Second), logger)
+	sm := newSignalManager(fakesignalmap.NewFakeSignalMap(messages, time.Second))
 	require.True(t, sm.isMuted())
 
 	wakeup := make(chan SignalData, 1024)

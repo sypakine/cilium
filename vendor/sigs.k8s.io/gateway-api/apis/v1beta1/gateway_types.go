@@ -131,7 +131,7 @@ type RouteNamespaces = v1.RouteNamespaces
 // +k8s:deepcopy-gen=false
 type RouteGroupKind = v1.RouteGroupKind
 
-// GatewaySpecAddress describes an address that can be bound to a Gateway.
+// GatewayAddress describes an address that can be bound to a Gateway.
 // +k8s:deepcopy-gen=false
 type GatewaySpecAddress = v1.GatewaySpecAddress
 

@@ -113,8 +113,6 @@ const (
 	IPsecEnabled                  Feature = "enable-ipsec"
 	ClusterMeshEnableEndpointSync Feature = "clustermesh-enable-endpoint-sync"
 
-	PolicyDefaultLocalCLuster Feature = "policy-default-local-cluster"
-
 	LocalRedirectPolicy Feature = "enable-local-redirect-policy"
 
 	BGPControlPlane Feature = "enable-bgp-control-plane"
@@ -122,8 +120,6 @@ const (
 	NodeLocalDNS Feature = "node-local-dns"
 
 	Multicast Feature = "multicast-enabled"
-
-	L7LoadBalancer Feature = "loadbalancer-l7"
 )
 
 // Feature is the name of a Cilium Feature (e.g. l7-proxy, cni chaining mode etc)
@@ -263,6 +259,7 @@ func RequireModeIsNot(feature Feature, mode string) Requirement {
 // ExtractFromVersionedConfigMap extracts features based on Cilium version and cilium-config
 // ConfigMap.
 func (fs Set) ExtractFromVersionedConfigMap(ciliumVersion semver.Version, cm *v1.ConfigMap) {
+	fs[Tunnel], fs[TunnelPort] = ExtractTunnelFeatureFromVersionedConfigMap(ciliumVersion, cm)
 	fs[PortRanges] = ExtractPortRanges(ciliumVersion)
 	fs[L7PortRanges] = ExtractL7PortRanges(ciliumVersion)
 }
@@ -281,7 +278,7 @@ func ExtractL7PortRanges(ciliumVersion semver.Version) Status {
 	}
 }
 
-func ExtractTunnelFeatureFromConfigMap(cm *v1.ConfigMap) (Status, Status) {
+func ExtractTunnelFeatureFromVersionedConfigMap(ciliumVersion semver.Version, cm *v1.ConfigMap) (Status, Status) {
 	getTunnelPortFeature := func(tunnelProtocol string) Status {
 		tunnelPort, ok := cm.Data["tunnel-port"]
 		switch {
@@ -294,6 +291,19 @@ func ExtractTunnelFeatureFromConfigMap(cm *v1.ConfigMap) (Status, Status) {
 			Enabled: ok,
 			Mode:    tunnelPort,
 		}
+	}
+
+	if versioncheck.MustCompile("<1.14.0")(ciliumVersion) {
+		enabled, proto := true, "vxlan"
+		if v, ok := cm.Data["tunnel"]; ok {
+			if enabled = v != "disabled"; enabled {
+				proto = v
+			}
+		}
+		return Status{
+			Enabled: enabled,
+			Mode:    proto,
+		}, getTunnelPortFeature(proto)
 	}
 
 	mode := "tunnel"
@@ -379,10 +389,6 @@ func (fs Set) ExtractFromConfigMap(cm *v1.ConfigMap) {
 		Enabled: cm.Data[string(ClusterMeshEnableEndpointSync)] == "true",
 	}
 
-	fs[PolicyDefaultLocalCLuster] = Status{
-		Enabled: cm.Data[string(PolicyDefaultLocalCLuster)] == "true",
-	}
-
 	fs[LocalRedirectPolicy] = Status{
 		Enabled: cm.Data[string(LocalRedirectPolicy)] == "true",
 	}
@@ -414,12 +420,6 @@ func (fs Set) ExtractFromConfigMap(cm *v1.ConfigMap) {
 	fs[PolicySecretSync] = Status{
 		Enabled: cm.Data[string(PolicySecretSync)] == "true",
 	}
-
-	fs[L7LoadBalancer] = Status{
-		Enabled: cm.Data[string(L7LoadBalancer)] == "envoy",
-	}
-
-	fs[Tunnel], fs[TunnelPort] = ExtractTunnelFeatureFromConfigMap(cm)
 }
 
 func (fs Set) ExtractFromNodes(nodesWithoutCilium map[string]struct{}) {

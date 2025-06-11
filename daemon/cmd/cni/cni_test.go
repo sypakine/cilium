@@ -9,9 +9,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cilium/hive/hivetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/tidwall/gjson"
+
+	"github.com/cilium/cilium/pkg/logging"
 )
 
 func TestInstallCNIConfFile(t *testing.T) {
@@ -23,7 +24,7 @@ func TestInstallCNIConfFile(t *testing.T) {
 		CNIExclusive:          true,
 		WriteCNIConfWhenReady: path.Join(workdir, "05-cilium.conflist"),
 	}
-	c := newConfigManager(hivetest.Logger(t), cfg, false)
+	c := newConfigManager(logging.DefaultLogger, cfg, false)
 
 	touch(t, workdir, "other.conflist")
 	touch(t, workdir, "05-cilium.conf") // older config file we no longer create
@@ -51,7 +52,7 @@ func TestRenderCNIConfUnchained(t *testing.T) {
 	cfg := Config{
 		CNILogFile: `/opt"/cni.log`,
 	}
-	c := newConfigManager(hivetest.Logger(t), cfg, false)
+	c := newConfigManager(logging.DefaultLogger, cfg, false)
 	// check that all templates compile
 	for mode := range cniConfigs {
 		c.config.CNIChainingMode = mode
@@ -71,7 +72,7 @@ func TestRenderCNIConfChained(t *testing.T) {
 		CNIChainingTarget: "another-network",
 	}
 
-	c := newConfigManager(hivetest.Logger(t), cfg, false)
+	c := newConfigManager(logging.DefaultLogger, cfg, false)
 	for _, tc := range []struct {
 		name            string
 		cniConf         string
@@ -239,7 +240,7 @@ func TestCleanupOtherCNI(t *testing.T) {
 		CNIExclusive:          true,
 		WriteCNIConfWhenReady: path.Join(workdir, "42-keep.json"),
 	}
-	c := newConfigManager(hivetest.Logger(t), cfg, false)
+	c := newConfigManager(logging.DefaultLogger, cfg, false)
 
 	for _, name := range []string{
 		"01-someoneelse.conf",

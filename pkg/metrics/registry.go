@@ -5,8 +5,6 @@ package metrics
 
 import (
 	"errors"
-	"fmt"
-	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -16,10 +14,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 
 	"github.com/cilium/cilium/pkg/lock"
-	"github.com/cilium/cilium/pkg/logging/logfields"
 	metricpkg "github.com/cilium/cilium/pkg/metrics/metric"
 	"github.com/cilium/cilium/pkg/option"
 )
@@ -44,7 +42,7 @@ func (rc RegistryConfig) Flags(flags *pflag.FlagSet) {
 type RegistryParams struct {
 	cell.In
 
-	Logger     *slog.Logger
+	Logger     logrus.FieldLogger
 	Shutdowner hive.Shutdowner
 	Lifecycle  cell.Lifecycle
 
@@ -93,7 +91,7 @@ func NewRegistry(params RegistryParams) *Registry {
 		params.Lifecycle.Append(cell.Hook{
 			OnStart: func(hc cell.HookContext) error {
 				go func() {
-					params.Logger.Info("Serving prometheus metrics", logfields.Address, params.Config.PrometheusServeAddr)
+					params.Logger.Infof("Serving prometheus metrics on %s", params.Config.PrometheusServeAddr)
 					err := srv.ListenAndServe()
 					if err != nil && !errors.Is(err, http.ErrServerClosed) {
 						params.Shutdowner.Shutdown(hive.ShutdownWithError(err))
@@ -138,8 +136,8 @@ func (r *Registry) Reinitialize() {
 
 	// Don't register status and BPF collectors into the [r.collectors] as it is
 	// expensive to sample and currently not terrible useful to keep data on.
-	r.inner.MustRegister(metricpkg.EnabledCollector{C: newStatusCollector(r.params.Logger)})
-	r.inner.MustRegister(metricpkg.EnabledCollector{C: newbpfCollector(r.params.Logger)})
+	r.inner.MustRegister(metricpkg.EnabledCollector{C: newStatusCollector()})
+	r.inner.MustRegister(metricpkg.EnabledCollector{C: newbpfCollector()})
 
 	metrics := make(map[string]metricpkg.WithMetadata)
 	for i, autoMetric := range r.params.AutoMetrics {
@@ -175,10 +173,9 @@ func (r *Registry) Reinitialize() {
 		case '-':
 			metric.SetEnabled(false)
 		default:
-			r.params.Logger.Warn(
-				fmt.Sprintf(
-					"--metrics flag contains value which does not start with + or -, '%s', ignoring",
-					metricFlag),
+			r.params.Logger.Warning(
+				"--metrics flag contains value which does not start with + or -, '%s', ignoring",
+				metricFlag,
 			)
 		}
 	}

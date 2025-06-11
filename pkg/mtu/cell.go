@@ -87,7 +87,8 @@ func (c Config) Flags(flags *pflag.FlagSet) {
 
 func newForCell(lc cell.Lifecycle, p mtuParams, cc Config) (MTU, error) {
 	c := &Configuration{}
-	group := p.JobRegistry.NewGroup(p.Health, lc)
+	group := p.JobRegistry.NewGroup(p.Health)
+	lc.Append(group)
 	lc.Append(cell.Hook{
 		OnStart: func(ctx cell.HookContext) error {
 			tunnelOverIPv6 := !option.Config.EnableIPv4 && option.Config.RoutingMode == option.RoutingModeTunnel

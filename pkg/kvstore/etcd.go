@@ -1044,7 +1044,7 @@ func (e *etcdClient) determineEndpointStatus(ctx context.Context, endpointAddres
 	defer cancel()
 
 	e.logger.Debug("Checking status to etcd endpoint",
-		logfields.Endpoint, endpointAddress,
+		logfields.Endpoints, endpointAddress,
 	)
 
 	status, err := e.client.Status(ctxTimeout, endpointAddress)

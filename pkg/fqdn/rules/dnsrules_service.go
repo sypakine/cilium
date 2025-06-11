@@ -6,7 +6,7 @@ package rules
 import (
 	"log/slog"
 
-	fqdnproxy "github.com/cilium/cilium/pkg/fqdn/proxy"
+	"github.com/cilium/cilium/pkg/fqdn/defaultdns"
 	"github.com/cilium/cilium/pkg/fqdn/restore"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/policy"
@@ -25,13 +25,13 @@ type DNSRulesService interface {
 
 type dnsRulesService struct {
 	logger     *slog.Logger
-	dnsProxy   fqdnproxy.DNSProxier
+	dnsProxy   defaultdns.Proxy
 	policyRepo policy.PolicyRepository
 }
 
 var _ DNSRulesService = &dnsRulesService{}
 
-func NewDNSRulesService(logger *slog.Logger, dnsProxy fqdnproxy.DNSProxier, policyRepo policy.PolicyRepository) DNSRulesService {
+func NewDNSRulesService(logger *slog.Logger, dnsProxy defaultdns.Proxy, policyRepo policy.PolicyRepository) DNSRulesService {
 	return &dnsRulesService{
 		logger:     logger,
 		dnsProxy:   dnsProxy,
@@ -40,13 +40,15 @@ func NewDNSRulesService(logger *slog.Logger, dnsProxy fqdnproxy.DNSProxier, poli
 }
 
 func (r *dnsRulesService) GetDNSRules(epID uint16) restore.DNSRules {
+	dnsProxy := r.dnsProxy.Get()
+	if dnsProxy == nil {
+		return nil
+	}
+
 	// We get the latest consistent view on the DNS rules by getting handle to the latest
 	// coherent state of the selector cache
-	if r.dnsProxy == nil { // L7 proxy may be disabled
-		return restore.DNSRules{}
-	}
 	version := r.policyRepo.GetSelectorCache().GetVersionHandle()
-	rules, err := r.dnsProxy.GetRules(version, epID)
+	rules, err := dnsProxy.GetRules(version, epID)
 	version.Close()
 
 	if err != nil {
@@ -60,8 +62,10 @@ func (r *dnsRulesService) GetDNSRules(epID uint16) restore.DNSRules {
 }
 
 func (r *dnsRulesService) RemoveRestoredDNSRules(epID uint16) {
-	if r.dnsProxy == nil {
+	dnsProxy := r.dnsProxy.Get()
+	if dnsProxy == nil {
 		return
 	}
-	r.dnsProxy.RemoveRestoredRules(epID)
+
+	dnsProxy.RemoveRestoredRules(epID)
 }

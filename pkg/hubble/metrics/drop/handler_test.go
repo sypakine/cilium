@@ -4,6 +4,7 @@
 package drop
 
 import (
+	"context"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -55,7 +56,7 @@ func TestDropHandler(t *testing.T) {
 			Destination: &pb.Endpoint{Namespace: "bar"},
 			Verdict:     pb.Verdict_FORWARDED,
 		}
-		dropHandler.ProcessFlow(t.Context(), flow)
+		dropHandler.ProcessFlow(context.TODO(), flow)
 
 		metricFamilies, err := registry.Gather()
 		require.NoError(t, err)
@@ -90,8 +91,8 @@ func TestDropHandler(t *testing.T) {
 			DropReason:     uint32(pb.DropReason_POLICY_DENIED),
 			DropReasonDesc: pb.DropReason_POLICY_DENIED,
 		}
-		dropHandler.ProcessFlow(t.Context(), flow1)
-		dropHandler.ProcessFlow(t.Context(), flow2)
+		dropHandler.ProcessFlow(context.TODO(), flow1)
+		dropHandler.ProcessFlow(context.TODO(), flow2)
 
 		metricFamilies, err := registry.Gather()
 		require.NoError(t, err)
@@ -115,7 +116,7 @@ func TestDropHandler(t *testing.T) {
 		assert.Equal(t, 1., *metric.Counter.Value)
 
 		//send another flow with same labels
-		dropHandler.ProcessFlow(t.Context(), flow1)
+		dropHandler.ProcessFlow(context.TODO(), flow1)
 		metricFamilies, _ = registry.Gather()
 		metric = metricFamilies[0].Metric[0]
 		assert.Equal(t, 2., *metric.Counter.Value)

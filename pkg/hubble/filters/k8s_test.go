@@ -4,6 +4,7 @@
 package filters
 
 import (
+	"context"
 	"testing"
 
 	flowpb "github.com/cilium/cilium/api/v1/flow"
@@ -278,9 +279,9 @@ func TestPodFilter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fl, err := BuildFilterList(t.Context(), tt.args.f, []OnBuildFilter{&PodFilter{}})
+			fl, err := BuildFilterList(context.Background(), tt.args.f, []OnBuildFilter{&PodFilter{}})
 			if (err != nil) != tt.wantErr {
-				t.Errorf("BuildFilterList(t.Context(), ) error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("BuildFilterList(context.Background(), ) error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			for i, ev := range tt.args.ev {
@@ -368,9 +369,9 @@ func TestServiceFilter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fl, err := BuildFilterList(t.Context(), tt.args.f, []OnBuildFilter{&ServiceFilter{}})
+			fl, err := BuildFilterList(context.Background(), tt.args.f, []OnBuildFilter{&ServiceFilter{}})
 			if (err != nil) != tt.wantErr {
-				t.Errorf("BuildFilterList(t.Context(), ) error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("BuildFilterList(context.Background(), ) error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			for i, ev := range tt.args.ev {

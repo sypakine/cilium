@@ -22,7 +22,6 @@ type EndpointProxy interface {
 	UpdateNetworkPolicy(ep endpoint.EndpointUpdater, policy *policy.L4Policy, ingressPolicyEnforced, egressPolicyEnforced bool, wg *completion.WaitGroup) (error, func() error)
 	UseCurrentNetworkPolicy(ep endpoint.EndpointUpdater, policy *policy.L4Policy, wg *completion.WaitGroup)
 	RemoveNetworkPolicy(ep endpoint.EndpointInfoSource)
-	GetListenerProxyPort(listener string) uint16
 }
 
 func (e *Endpoint) removeNetworkPolicy() {
@@ -61,9 +60,4 @@ func (f *FakeEndpointProxy) UpdateNetworkPolicy(ep endpoint.EndpointUpdater, pol
 func (f *FakeEndpointProxy) RemoveNetworkPolicy(ep endpoint.EndpointInfoSource) {}
 
 func (f *FakeEndpointProxy) UpdateSDP(rules map[identity.NumericIdentity]policy.SelectorPolicy) {
-}
-
-// GetListenerProxyPort does nothing.
-func (f *FakeEndpointProxy) GetListenerProxyPort(listener string) uint16 {
-	return 0
 }

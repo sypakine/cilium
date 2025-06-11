@@ -4,6 +4,7 @@
 package filters
 
 import (
+	"context"
 	"testing"
 
 	flowpb "github.com/cilium/cilium/api/v1/flow"
@@ -151,7 +152,7 @@ func TestEventTypeFilter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fl, err := BuildFilterList(t.Context(), tt.args.f, []OnBuildFilter{&EventTypeFilter{}})
+			fl, err := BuildFilterList(context.Background(), tt.args.f, []OnBuildFilter{&EventTypeFilter{}})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("BuildFilterList() with EventTypeFilter: error = %v, wantErr %v", err, tt.wantErr)
 				return

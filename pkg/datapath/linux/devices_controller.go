@@ -14,6 +14,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/asm"
 	"github.com/cilium/hive/cell"
 	"github.com/cilium/statedb"
 	"github.com/spf13/pflag"
@@ -24,6 +26,7 @@ import (
 	"golang.org/x/sys/unix"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"github.com/cilium/cilium/pkg/datapath/linux/probes"
 	"github.com/cilium/cilium/pkg/datapath/linux/safenetlink"
 	"github.com/cilium/cilium/pkg/datapath/tables"
 	"github.com/cilium/cilium/pkg/defaults"
@@ -128,6 +131,7 @@ type devicesController struct {
 	initialized          chan struct{}
 	filter               tables.DeviceFilter
 	enforceAutoDetection bool
+	l3DevSupported       bool
 
 	// deadLinkIndexes tracks the set of links that have been deleted. This is needed
 	// to avoid processing route or address updates after a link delete as they may
@@ -157,6 +161,9 @@ func (dc *devicesController) Start(startCtx cell.HookContext) error {
 		if err != nil {
 			return err
 		}
+
+		// Only probe for L3 device support when netlink isn't mocked by tests.
+		dc.l3DevSupported = probes.HaveProgramHelper(dc.log, ebpf.SchedCLS, asm.FnSkbChangeHead) == nil
 	}
 
 	var ctx context.Context
@@ -655,6 +662,12 @@ func (dc *devicesController) isSelectedDevice(d *tables.Device, txn statedb.Writ
 	// Ignore bridge and bonding slave devices
 	if d.MasterIndex != 0 {
 		return false, fmt.Sprintf("bridged or bonded to ifindex %d", d.MasterIndex)
+	}
+
+	// Ignore L3 devices if we cannot support them.
+	hasMacAddr := len(d.HardwareAddr) != 0
+	if !dc.l3DevSupported && !hasMacAddr {
+		return false, "L3 device, kernel too old, >= 5.8 required"
 	}
 
 	// Never consider devices with any of the excluded devices.

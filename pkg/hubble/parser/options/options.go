@@ -3,7 +3,12 @@
 
 package options
 
-import "strings"
+import (
+	"log/slog"
+	"strings"
+
+	"github.com/cilium/cilium/pkg/logging/logfields"
+)
 
 // Option is used to configure parsers
 type Option func(*Options)
@@ -38,8 +43,8 @@ func CacheSize(size int) Option {
 	}
 }
 
-// WithRedact configures which data Hubble will redact.
-func WithRedact(httpQuery, httpUserInfo, kafkaApiKey bool, allowHeaders, denyHeaders []string) Option {
+// Redact configures which data Hubble will redact.
+func WithRedact(logger *slog.Logger, httpQuery, httpUserInfo, kafkaApiKey bool, allowHeaders, denyHeaders []string) Option {
 	return func(opt *Options) {
 		opt.HubbleRedactSettings.Enabled = true
 		opt.HubbleRedactSettings.RedactHTTPQuery = httpQuery
@@ -49,20 +54,32 @@ func WithRedact(httpQuery, httpUserInfo, kafkaApiKey bool, allowHeaders, denyHea
 			Allow: headerSliceToMap(allowHeaders),
 			Deny:  headerSliceToMap(denyHeaders),
 		}
+		if logger != nil {
+			logger.Info(
+				"configured Hubble with redact",
+				logfields.Options, opt.HubbleRedactSettings,
+			)
+		}
 	}
 }
 
 // WithNetworkPolicyCorrelation configures the Network Policy correlation of Hubble Flows.
-func WithNetworkPolicyCorrelation(enabled bool) Option {
+func WithNetworkPolicyCorrelation(logger *slog.Logger, enabled bool) Option {
 	return func(opt *Options) {
 		opt.EnableNetworkPolicyCorrelation = enabled
+		logger.Info("configured Hubble with network policy correlation",
+			logfields.Options, opt.EnableNetworkPolicyCorrelation,
+		)
 	}
 }
 
 // WithSkipUnknownCGroupIDs configures whether Hubble will skip events with unknown CGroup IDs.
-func WithSkipUnknownCGroupIDs(enabled bool) Option {
+func WithSkipUnknownCGroupIDs(logger *slog.Logger, enabled bool) Option {
 	return func(opt *Options) {
 		opt.SkipUnknownCGroupIDs = enabled
+		logger.Info("configured Hubble to skip events with unknown CGroup IDs",
+			logfields.Options, opt.SkipUnknownCGroupIDs,
+		)
 	}
 }
 

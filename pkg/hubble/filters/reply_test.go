@@ -4,6 +4,7 @@
 package filters
 
 import (
+	"context"
 	"testing"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -120,7 +121,7 @@ func Test_filterByReplyField(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fl, err := BuildFilterList(t.Context(), tt.args.f, []OnBuildFilter{&ReplyFilter{}})
+			fl, err := BuildFilterList(context.Background(), tt.args.f, []OnBuildFilter{&ReplyFilter{}})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("\"%s\" error = %v, wantErr %v", tt.name, err, tt.wantErr)
 				return

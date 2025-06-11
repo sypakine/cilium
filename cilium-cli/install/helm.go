@@ -17,13 +17,13 @@ func (k *K8sInstaller) getHelmValues() (map[string]any, error) {
 	helmMapOpts := map[string]string{}
 
 	switch {
-	case versioncheck.MustCompile(">=1.14.0")(k.chartVersion):
+	case versioncheck.MustCompile(">=1.12.0")(k.chartVersion):
 		// TODO(aanm) to keep the previous behavior unchanged we will set the number
 		// of the operator replicas to 1. Ideally this should be the default in the helm chart
 		helmMapOpts["operator.replicas"] = "1"
 
 		// Set nodeinit enabled option
-		if needsNodeInit(k.flavor.Kind) {
+		if needsNodeInit(k.flavor.Kind, k.chartVersion) {
 			helmMapOpts["nodeinit.enabled"] = "true"
 		}
 
@@ -49,13 +49,21 @@ func (k *K8sInstaller) getHelmValues() (map[string]any, error) {
 		// Set Helm options specific to the detected / selected datapath mode
 		switch k.params.DatapathMode {
 		case DatapathTunnel:
-			helmMapOpts["routingMode"] = routingModeTunnel
-			helmMapOpts["tunnelProtocol"] = tunnelVxlan
-
+			if versioncheck.MustCompile(">=1.14.0")(k.chartVersion) {
+				helmMapOpts["routingMode"] = routingModeTunnel
+				helmMapOpts["tunnelProtocol"] = tunnelVxlan
+			} else {
+				helmMapOpts["tunnel"] = tunnelVxlan
+			}
 		case DatapathAwsENI:
 			helmMapOpts["ipam.mode"] = ipamENI
 			helmMapOpts["eni.enabled"] = "true"
-			helmMapOpts["routingMode"] = routingModeNative
+			if versioncheck.MustCompile(">=1.14.0")(k.chartVersion) {
+				helmMapOpts["routingMode"] = routingModeNative
+			} else {
+				// Can be removed once we drop support for <1.14.0
+				helmMapOpts["tunnel"] = tunnelDisabled
+			}
 
 		case DatapathGKE:
 			helmMapOpts["ipam.mode"] = ipamKubernetes
@@ -70,7 +78,12 @@ func (k *K8sInstaller) getHelmValues() (map[string]any, error) {
 			helmMapOpts["azure.tenantID"] = k.params.Azure.TenantID
 			helmMapOpts["azure.clientID"] = k.params.Azure.ClientID
 			helmMapOpts["azure.clientSecret"] = k.params.Azure.ClientSecret
-			helmMapOpts["routingMode"] = routingModeNative
+			if versioncheck.MustCompile(">=1.14.0")(k.chartVersion) {
+				helmMapOpts["routingMode"] = routingModeNative
+			} else {
+				// Can be removed once we drop support for <1.14.0
+				helmMapOpts["tunnel"] = tunnelDisabled
+			}
 
 			helmMapOpts["bpf.masquerade"] = "false"
 			helmMapOpts["enableIPv4Masquerade"] = "false"

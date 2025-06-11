@@ -33,14 +33,17 @@ func (txn *Txn[T]) Len() int {
 	return txn.size
 }
 
-// Clone returns a clone of the transaction for reading. The clone is unaffected
+// Clone returns a clone of the transaction. The clone is unaffected
 // by any future changes done with the original transaction.
-func (txn *Txn[T]) Clone() Ops[T] {
+func (txn *Txn[T]) Clone() *Txn[T] {
 	// Clear the mutated nodes so that the returned clone won't be changed by
 	// further modifications in this transaction.
 	txn.mutated.clear()
-	treeCopy := txn.Tree
-	return &treeCopy
+	return &Txn[T]{
+		Tree:               txn.Tree,
+		watches:            map[chan struct{}]struct{}{},
+		deleteParentsCache: nil,
+	}
 }
 
 // Insert or update the tree with the given key and value.

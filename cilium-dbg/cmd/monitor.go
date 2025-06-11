@@ -19,8 +19,6 @@ import (
 	"github.com/cilium/cilium/api/v1/models"
 	"github.com/cilium/cilium/pkg/datapath/link"
 	"github.com/cilium/cilium/pkg/defaults"
-	"github.com/cilium/cilium/pkg/logging"
-	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/monitor"
 	"github.com/cilium/cilium/pkg/monitor/agent/listener"
 	"github.com/cilium/cilium/pkg/monitor/format"
@@ -142,10 +140,7 @@ func consumeMonitorEvents(ctx context.Context, conn net.Conn, version listener.V
 			// earlier code used an else to handle this case, along with pl.Type ==
 			// payload.RecordLost above. It should be safe to call lostEvent to match
 			// the earlier behaviour, despite it not being wholly correct.
-			log.Warn("Unknown payload type",
-				logfields.Error, err,
-				logfields.Type, pl.Type,
-			)
+			log.WithError(err).WithField("type", pl.Type).Warn("Unknown payload type")
 			format.LostEvent(pl.Lost, pl.CPU)
 		}
 	}
@@ -251,17 +246,17 @@ func runMonitor(ctx context.Context) {
 	for ; ; time.Sleep(connTimeout) {
 		conn, version, err := openMonitorSock(vp.GetString("monitor-socket"))
 		if err != nil {
-			log.Error("Cannot open monitor socket", logfields.Error, err)
+			log.WithError(err).Error("Cannot open monitor socket")
 			return
 		}
 
 		if err := consumeMonitorEvents(ctx, conn, version); err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				log.Warn("connection closed", logfields.Error, err)
+				log.WithError(err).Warn("connection closed")
 				continue
 			}
 
-			logging.Fatal(log, "decoding error", logfields.Error, err)
+			log.WithError(err).Fatal("decoding error")
 		}
 
 		return

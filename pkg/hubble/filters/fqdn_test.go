@@ -4,6 +4,7 @@
 package filters
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -201,7 +202,7 @@ func TestFQDNFilter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fl, err := BuildFilterList(t.Context(), tt.args.f, []OnBuildFilter{&FQDNFilter{}})
+			fl, err := BuildFilterList(context.Background(), tt.args.f, []OnBuildFilter{&FQDNFilter{}})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("BuildFilterList() with FQDNFilter: error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -295,7 +296,7 @@ func Test_filterByDNSQuery(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fl, err := BuildFilterList(t.Context(), tt.args.f, []OnBuildFilter{&FQDNFilter{}})
+			fl, err := BuildFilterList(context.Background(), tt.args.f, []OnBuildFilter{&FQDNFilter{}})
 			assert.Equal(t, tt.wantErr, err != nil)
 			if err == nil {
 				got := fl.MatchOne(tt.args.ev)

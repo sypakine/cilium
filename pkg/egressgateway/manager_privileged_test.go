@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
-	"slices"
 	"testing"
 	"time"
 
@@ -42,16 +41,13 @@ const (
 
 	node1 = "k8s1"
 	node2 = "k8s2"
-	node3 = "k8s3"
 
 	node1IP = "192.168.1.1"
 	node2IP = "192.168.1.2"
-	node3IP = "192.168.1.3"
 
 	ep1IP = "10.0.0.1"
 	ep2IP = "10.0.0.2"
 	ep3IP = "10.0.0.3"
-	ep4IP = "10.0.0.4"
 
 	destCIDR        = "1.1.1.0/24"
 	destCIDR3       = "1.1.3.0/24"
@@ -77,7 +73,6 @@ const (
 	ep1IPv6 = "fd00::1"
 	ep2IPv6 = "fd00::2"
 	ep3IPv6 = "fd00::3"
-	ep4IPv6 = "fd00::4"
 
 	destCIDRv6        = "2001:db8::/64"
 	destCIDR3v6       = "2001:db8:3::/64"
@@ -105,7 +100,6 @@ var (
 	nodeGroupNotFoundLabels = map[string]string{"label1": "notfound"}
 	nodeGroup1Labels        = map[string]string{"label1": "1"}
 	nodeGroup2Labels        = map[string]string{"label2": "2"}
-	nodeGroup3Labels        = map[string]string{"label3": "3"}
 )
 
 type egressRule struct {
@@ -120,11 +114,6 @@ type parsedEgressRule struct {
 	destCIDR  netip.Prefix
 	egressIP  netip.Addr
 	gatewayIP netip.Addr
-}
-
-func (v *parsedEgressRule) String() string {
-	return fmt.Sprintf("sourceIP: %s, destCIDR: %s, egressIP: %s, gatewayIP: %s",
-		v.sourceIP.String(), v.destCIDR.String(), v.gatewayIP.String(), v.egressIP.String())
 }
 
 type rpFilterSetting struct {
@@ -158,8 +147,8 @@ func setupEgressGatewayTestSuite(t *testing.T) *EgressGatewayTestSuite {
 	k.sysctl = sysctl.NewDirectSysctl(afero.NewOsFs(), "/proc")
 
 	lc := hivetest.Lifecycle(t)
-	policyMap4 := egressmap.CreatePrivatePolicyMap4(lc, nil, egressmap.DefaultPolicyConfig)
-	policyMap6 := egressmap.CreatePrivatePolicyMap6(lc, nil, egressmap.DefaultPolicyConfig)
+	policyMap4 := egressmap.CreatePrivatePolicyMap4(lc, egressmap.DefaultPolicyConfig)
+	policyMap6 := egressmap.CreatePrivatePolicyMap6(lc, egressmap.DefaultPolicyConfig)
 
 	k.manager, err = newEgressGatewayManager(Params{
 		Logger:            logger,
@@ -186,11 +175,7 @@ func TestEgressGatewayCEGPParser(t *testing.T) {
 	policy := policyParams{
 		name:             "",
 		destinationCIDRs: []string{destCIDR},
-		policyGwParams: []policyGatewayParams{
-			{
-				iface: testInterface1,
-			},
-		},
+		iface:            testInterface1,
 	}
 
 	cegp, _ := newCEGP(&policy)
@@ -199,12 +184,8 @@ func TestEgressGatewayCEGPParser(t *testing.T) {
 
 	// catch nil DestinationCIDR field
 	policy = policyParams{
-		name: "policy-1",
-		policyGwParams: []policyGatewayParams{
-			{
-				iface: testInterface1,
-			},
-		},
+		name:  "policy-1",
+		iface: testInterface1,
 	}
 
 	cegp, _ = newCEGP(&policy)
@@ -214,12 +195,8 @@ func TestEgressGatewayCEGPParser(t *testing.T) {
 
 	// must specify at least one DestinationCIDR
 	policy = policyParams{
-		name: "policy-1",
-		policyGwParams: []policyGatewayParams{
-			{
-				iface: testInterface1,
-			},
-		},
+		name:  "policy-1",
+		iface: testInterface1,
 	}
 
 	cegp, _ = newCEGP(&policy)
@@ -230,34 +207,10 @@ func TestEgressGatewayCEGPParser(t *testing.T) {
 	policy = policyParams{
 		name:             "policy-1",
 		destinationCIDRs: []string{destCIDR},
-		policyGwParams: []policyGatewayParams{
-			{
-				iface: testInterface1,
-			},
-		},
+		iface:            testInterface1,
 	}
 
 	cegp, _ = newCEGP(&policy)
-	cegp.Spec.EgressGateway = nil
-	_, err = ParseCEGP(cegp)
-	require.Error(t, err)
-
-	// Catch EgressGateways that don't contain EgressGateway or EgressGateways fields.
-	policy = policyParams{
-		name:             "policy-1",
-		destinationCIDRs: []string{destCIDR},
-		policyGwParams: []policyGatewayParams{
-			{
-				iface: testInterface1,
-			},
-			{
-				iface: testInterface2,
-			},
-		},
-	}
-
-	cegp, _ = newCEGP(&policy)
-	cegp.Spec.EgressGateways = nil
 	cegp.Spec.EgressGateway = nil
 	_, err = ParseCEGP(cegp)
 	require.Error(t, err)
@@ -266,11 +219,7 @@ func TestEgressGatewayCEGPParser(t *testing.T) {
 	policy = policyParams{
 		name:             "policy-1",
 		destinationCIDRs: []string{destCIDR},
-		policyGwParams: []policyGatewayParams{
-			{
-				iface: testInterface1,
-			},
-		},
+		iface:            testInterface1,
 	}
 
 	cegp, _ = newCEGP(&policy)
@@ -283,16 +232,8 @@ func TestEgressGatewayCEGPParser(t *testing.T) {
 	policy = policyParams{
 		name:             "policy-1",
 		destinationCIDRs: []string{destCIDR},
-		policyGwParams: []policyGatewayParams{
-			{
-				iface:    testInterface1,
-				egressIP: egressIP1,
-			},
-			{
-				iface:    testInterface2,
-				egressIP: egressIP2,
-			},
-		},
+		iface:            testInterface1,
+		egressIP:         egressIP1,
 	}
 
 	cegp, _ = newCEGP(&policy)
@@ -336,12 +277,8 @@ func TestEgressGatewayManager(t *testing.T) {
 		name:             "policy-1",
 		endpointLabels:   ep1Labels,
 		destinationCIDRs: []string{destCIDR, destCIDRv6},
-		policyGwParams: []policyGatewayParams{
-			{
-				nodeLabels: nodeGroup1Labels,
-				iface:      testInterface1,
-			},
-		},
+		nodeLabels:       nodeGroup1Labels,
+		iface:            testInterface1,
 	}
 
 	addPolicy(t, k.policies, &policy1)
@@ -408,12 +345,8 @@ func TestEgressGatewayManager(t *testing.T) {
 		name:             "policy-2",
 		endpointLabels:   ep2Labels,
 		destinationCIDRs: []string{destCIDR, destCIDRv6},
-		policyGwParams: []policyGatewayParams{
-			{
-				nodeLabels: nodeGroup2Labels,
-				iface:      testInterface1,
-			},
-		},
+		nodeLabels:       nodeGroup2Labels,
+		iface:            testInterface1,
 	})
 	reconciliationEventsCount = waitForReconciliationRun(t, egressGatewayManager, reconciliationEventsCount)
 
@@ -444,12 +377,8 @@ func TestEgressGatewayManager(t *testing.T) {
 		endpointLabels:   ep1Labels,
 		destinationCIDRs: []string{destCIDR, destCIDRv6},
 		excludedCIDRs:    []string{excludedCIDR1, excludedCIDR1v6},
-		policyGwParams: []policyGatewayParams{
-			{
-				nodeLabels: nodeGroup1Labels,
-				iface:      testInterface1,
-			},
-		},
+		nodeLabels:       nodeGroup1Labels,
+		iface:            testInterface1,
 	})
 	reconciliationEventsCount = waitForReconciliationRun(t, egressGatewayManager, reconciliationEventsCount)
 
@@ -470,12 +399,8 @@ func TestEgressGatewayManager(t *testing.T) {
 		endpointLabels:   ep1Labels,
 		destinationCIDRs: []string{destCIDR, destCIDRv6},
 		excludedCIDRs:    []string{excludedCIDR1, excludedCIDR2, excludedCIDR1v6, excludedCIDR2v6},
-		policyGwParams: []policyGatewayParams{
-			{
-				nodeLabels: nodeGroup1Labels,
-				iface:      testInterface1,
-			},
-		},
+		nodeLabels:       nodeGroup1Labels,
+		iface:            testInterface1,
 	})
 	reconciliationEventsCount = waitForReconciliationRun(t, egressGatewayManager, reconciliationEventsCount)
 
@@ -498,12 +423,8 @@ func TestEgressGatewayManager(t *testing.T) {
 		endpointLabels:   ep1Labels,
 		destinationCIDRs: []string{destCIDR, destCIDRv6},
 		excludedCIDRs:    []string{excludedCIDR2, excludedCIDR2v6},
-		policyGwParams: []policyGatewayParams{
-			{
-				nodeLabels: nodeGroup1Labels,
-				iface:      testInterface1,
-			},
-		},
+		nodeLabels:       nodeGroup1Labels,
+		iface:            testInterface1,
 	})
 	reconciliationEventsCount = waitForReconciliationRun(t, egressGatewayManager, reconciliationEventsCount)
 
@@ -523,12 +444,8 @@ func TestEgressGatewayManager(t *testing.T) {
 		name:             "policy-1",
 		endpointLabels:   ep1Labels,
 		destinationCIDRs: []string{destCIDR, destCIDRv6},
-		policyGwParams: []policyGatewayParams{
-			{
-				nodeLabels: nodeGroup1Labels,
-				iface:      testInterface1,
-			},
-		},
+		nodeLabels:       nodeGroup1Labels,
+		iface:            testInterface1,
 	})
 	reconciliationEventsCount = waitForReconciliationRun(t, egressGatewayManager, reconciliationEventsCount)
 
@@ -546,12 +463,8 @@ func TestEgressGatewayManager(t *testing.T) {
 		name:             "policy-1",
 		endpointLabels:   ep1Labels,
 		destinationCIDRs: []string{destCIDR, destCIDRv6},
-		policyGwParams: []policyGatewayParams{
-			{
-				nodeLabels: nodeGroupNotFoundLabels,
-				iface:      testInterface1,
-			},
-		},
+		nodeLabels:       nodeGroupNotFoundLabels,
+		iface:            testInterface1,
 	})
 	reconciliationEventsCount = waitForReconciliationRun(t, egressGatewayManager, reconciliationEventsCount)
 
@@ -569,12 +482,8 @@ func TestEgressGatewayManager(t *testing.T) {
 		name:             "policy-3",
 		endpointLabels:   ep1Labels,
 		destinationCIDRs: []string{destCIDR3, destCIDR3v6},
-		policyGwParams: []policyGatewayParams{
-			{
-				nodeLabels: nodeGroup1Labels,
-				iface:      "no_interface",
-			},
-		},
+		nodeLabels:       nodeGroup1Labels,
+		iface:            "no_interface",
 	})
 	reconciliationEventsCount = waitForReconciliationRun(t, egressGatewayManager, reconciliationEventsCount)
 
@@ -635,13 +544,9 @@ func TestNodeSelector(t *testing.T) {
 		name:             "policy-1",
 		endpointLabels:   ep1Labels,
 		destinationCIDRs: []string{destCIDR, destCIDRv6},
-		policyGwParams: []policyGatewayParams{
-			{
-				nodeLabels: nodeGroup1Labels,
-				iface:      testInterface1,
-			},
-		},
-		nodeSelectors: nodeGroup2Labels,
+		nodeLabels:       nodeGroup1Labels,
+		iface:            testInterface1,
+		nodeSelectors:    nodeGroup2Labels,
 	}
 
 	addPolicy(t, k.policies, &policy1)
@@ -715,12 +620,8 @@ func TestEndpointDataStore(t *testing.T) {
 		name:             "policy-1",
 		endpointLabels:   ep1Labels,
 		destinationCIDRs: []string{destCIDR, destCIDRv6},
-		policyGwParams: []policyGatewayParams{
-			{
-				nodeLabels: nodeGroup1Labels,
-				iface:      testInterface1,
-			},
-		},
+		nodeLabels:       nodeGroup1Labels,
+		iface:            testInterface1,
 	}
 
 	addPolicy(t, k.policies, &policy1)
@@ -775,191 +676,6 @@ func TestEndpointDataStore(t *testing.T) {
 	assertEgressRules6(t, policyMap6, []egressRule{
 		{ep3IPv6, destCIDRv6, egressIP1v6, node1IP},
 	})
-}
-
-func TestMultigatewayPolicy(t *testing.T) {
-	k := setupEgressGatewayTestSuite(t)
-	createTestInterface(t, k.sysctl, testInterface1, []string{egressCIDR1, egressCIDR1v6})
-
-	policyMap4 := k.manager.policyMap4
-	policyMap6 := k.manager.policyMap6
-
-	egressGatewayManager := k.manager
-	reconciliationEventsCount := egressGatewayManager.reconciliationEventsCount.Load()
-
-	k.policies.sync(t)
-	k.nodes.sync(t)
-	k.endpoints.sync(t)
-
-	reconciliationEventsCount = waitForReconciliationRun(t, egressGatewayManager, reconciliationEventsCount)
-
-	// Create a couple gateway nodes with different labels
-	type testNodes struct {
-		name   string
-		ip     string
-		labels map[string]string
-		node   *nodeTypes.Node
-	}
-	// List of nodes is already organized by the node IP.
-	nodes := []testNodes{
-		{node1, node1IP, nodeGroup1Labels, nil},
-		{node2, node2IP, nodeGroup2Labels, nil},
-	}
-	for i, node := range nodes {
-		newNode := newCiliumNode(node.name, node.ip, node.labels)
-		k.nodes.process(t, resource.Event[*cilium_api_v2.CiliumNode]{
-			Kind:   resource.Upsert,
-			Object: newNode.ToCiliumNode(),
-		})
-		nodes[i].node = &newNode
-		reconciliationEventsCount = waitForReconciliationRun(t, egressGatewayManager,
-			reconciliationEventsCount)
-	}
-	// Sort the list of nodes by node IP
-	slices.SortFunc(nodes, func(a, b testNodes) int {
-		return netip.MustParseAddr(a.ip).Compare(netip.MustParseAddr(b.ip))
-	})
-
-	// Create endpoints with the same set of labels.
-	type testEndpoints struct {
-		name string
-		ipv4 string
-		ipv6 string
-		ep   *k8sTypes.CiliumEndpoint
-		id   *identity.Identity
-	}
-	eps := []testEndpoints{
-		{"ep-1", ep1IP, ep1IPv6, nil, nil},
-		{"ep-2", ep2IP, ep2IPv6, nil, nil},
-		{"ep-3", ep3IP, ep3IPv6, nil, nil},
-		{"ep-4", ep4IP, ep4IPv6, nil, nil},
-	}
-	for i, ep := range eps {
-		newEP, newID := newEndpointAndIdentity(ep.name, ep.ipv4, ep.ipv6, ep1Labels)
-		addEndpoint(t, k.endpoints, &newEP)
-		eps[i].ep = &newEP
-		eps[i].id = newID
-		reconciliationEventsCount = waitForReconciliationRun(t, egressGatewayManager, reconciliationEventsCount)
-	}
-
-	// Function to generate the correct assignments for endpoints.
-	// List of nodes is expected to be sorted.
-	assignEndpoints := func(endpoints []testEndpoints, gateways []testNodes, ipv4 bool) []egressRule {
-		var rules []egressRule
-
-		for _, endpoint := range endpoints {
-			h := computeEndpointHash(endpoint.ep.UID)
-			gw := gateways[h%uint32(len(gateways))]
-
-			var sourceIP, cidr, egressIP string
-			if ipv4 {
-				sourceIP = endpoint.ipv4
-				cidr = destCIDR
-				// Egress IP is zero for nodes that are not the current node.
-				if gw.name == node1 {
-					egressIP = egressIP1
-				} else {
-					egressIP = zeroIP4
-				}
-			} else {
-				sourceIP = endpoint.ipv6
-				cidr = destCIDRv6
-				// Egress IP is zero for nodes that are not the current node.
-				if gw.name == node1 {
-					egressIP = egressIP1v6
-				} else {
-					egressIP = zeroIP6
-				}
-			}
-
-			rules = append(rules, egressRule{
-				sourceIP:  sourceIP,
-				destCIDR:  cidr,
-				egressIP:  egressIP,
-				gatewayIP: gw.ip,
-			})
-		}
-		return rules
-	}
-
-	// Create a new policy
-	policy1 := policyParams{
-		name:             "policy-1",
-		endpointLabels:   ep1Labels,
-		destinationCIDRs: []string{destCIDR, destCIDRv6},
-		policyGwParams: []policyGatewayParams{
-			{
-				nodeLabels: nodeGroup1Labels,
-				iface:      testInterface1,
-			},
-			{
-				nodeLabels: nodeGroup2Labels,
-				iface:      testInterface2,
-			},
-		},
-	}
-
-	addPolicy(t, k.policies, &policy1)
-	reconciliationEventsCount = waitForReconciliationRun(t, egressGatewayManager, reconciliationEventsCount)
-
-	// Check that the Egress rules are correctly created. Endpoints should have been assigned to
-	// gateways in round-robin way.
-	// Note that this is evaluated from the node1 perspective, so the entries for other nodes will
-	// have a zeroIP as EgressIP.
-	ipV4ExpectedpolicyMap := assignEndpoints(eps, nodes, true)
-	ipV6ExpectedpolicyMap := assignEndpoints(eps, nodes, false)
-	assertEgressRules4(t, policyMap4, ipV4ExpectedpolicyMap)
-	assertEgressRules6(t, policyMap6, ipV6ExpectedpolicyMap)
-
-	// Remove one endpoint and check that the remaining endpoints have not changed gateways.
-	deleteEndpoint(t, k.endpoints, eps[0].ep)
-	reconciliationEventsCount = waitForReconciliationRun(t, egressGatewayManager, reconciliationEventsCount)
-	assertEgressRules4(t, policyMap4, ipV4ExpectedpolicyMap[1:])
-	assertEgressRules6(t, policyMap6, ipV6ExpectedpolicyMap[1:])
-
-	// Add one endpoint and check the configuration went back to the previous state.
-	addEndpoint(t, k.endpoints, eps[0].ep)
-	reconciliationEventsCount = waitForReconciliationRun(t, egressGatewayManager, reconciliationEventsCount)
-	assertEgressRules4(t, policyMap4, ipV4ExpectedpolicyMap)
-	assertEgressRules6(t, policyMap6, ipV6ExpectedpolicyMap)
-
-	// Add a new gateway and check that the endpoints get redistributed.
-	nodes = append(nodes, testNodes{
-		name:   node3,
-		ip:     node3IP,
-		labels: nodeGroup3Labels,
-	})
-	newNode := newCiliumNode(node3, node3IP, nodeGroup3Labels)
-	k.nodes.process(t, resource.Event[*cilium_api_v2.CiliumNode]{
-		Kind:   resource.Upsert,
-		Object: newNode.ToCiliumNode(),
-	})
-	nodes[2].node = &newNode
-	reconciliationEventsCount = waitForReconciliationRun(t, egressGatewayManager, reconciliationEventsCount)
-
-	policy1.policyGwParams = append(policy1.policyGwParams, policyGatewayParams{
-		nodeLabels: nodeGroup3Labels,
-		iface:      testInterface2,
-	})
-	addPolicy(t, k.policies, &policy1)
-	reconciliationEventsCount = waitForReconciliationRun(t, egressGatewayManager, reconciliationEventsCount)
-	ipV4ExpectedpolicyMap = assignEndpoints(eps, nodes, true)
-	ipV6ExpectedpolicyMap = assignEndpoints(eps, nodes, false)
-	assertEgressRules4(t, policyMap4, assignEndpoints(eps, nodes, true))
-	assertEgressRules6(t, policyMap6, assignEndpoints(eps, nodes, false))
-
-	// Remove two gateways to ensure the endpoints are migrated to the single gateway left.
-	policy1.policyGwParams = policy1.policyGwParams[:1]
-	addPolicy(t, k.policies, &policy1)
-	waitForReconciliationRun(t, egressGatewayManager, reconciliationEventsCount)
-	for i := range ipV4ExpectedpolicyMap {
-		ipV4ExpectedpolicyMap[i].egressIP = egressIP1
-		ipV4ExpectedpolicyMap[i].gatewayIP = nodes[0].ip
-		ipV6ExpectedpolicyMap[i].egressIP = egressIP1
-		ipV6ExpectedpolicyMap[i].gatewayIP = nodes[0].ip
-	}
-	assertEgressRules4(t, policyMap4, assignEndpoints(eps, nodes[:1], true))
-	assertEgressRules6(t, policyMap6, assignEndpoints(eps, nodes[:1], false))
 }
 
 func TestCell(t *testing.T) {
@@ -1143,11 +859,11 @@ func tryAssertEgressRules4(policyMap *egressmap.PolicyMap4, rules []egressRule) 
 		}
 
 		if policyVal.GetEgressAddr() != r.egressIP {
-			return fmt.Errorf("mismatched egress IP. Expected: %s, Got: %s", r.String(), policyVal.String())
+			return fmt.Errorf("mismatched egress IP")
 		}
 
 		if policyVal.GetGatewayAddr() != r.gatewayIP {
-			return fmt.Errorf("mismatched gateway IP. Expected: %s, Got: %s", r.String(), policyVal.String())
+			return fmt.Errorf("mismatched gateway IP")
 		}
 	}
 
@@ -1189,11 +905,11 @@ func tryAssertEgressRules6(policyMap *egressmap.PolicyMap6, rules []egressRule) 
 		}
 
 		if policyVal.GetEgressAddr() != r.egressIP {
-			return fmt.Errorf("mismatched egress IP. Expected: %s, Got: %s", r.String(), policyVal.String())
+			return fmt.Errorf("mismatched egress IP")
 		}
 
 		if policyVal.GetGatewayAddr() != r.gatewayIP {
-			return fmt.Errorf("mismatched gateway IP. Expected: %s, Got: %s", r.String(), policyVal.String())
+			return fmt.Errorf("mismatched gateway IP")
 		}
 	}
 

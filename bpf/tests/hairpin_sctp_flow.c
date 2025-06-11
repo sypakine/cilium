@@ -26,8 +26,7 @@ mock_ctx_redirect_peer(const struct __sk_buff *ctx __maybe_unused, int ifindex _
 #include <bpf_lxc.c>
 
 /* Set the LXC source address to be the address of pod one */
-ASSIGN_CONFIG(union v4addr, endpoint_ipv4, { .be32 = v4_pod_one })
-ASSIGN_CONFIG(union v4addr, service_loopback_ipv4, { .be32 = v4_svc_loopback })
+ASSIGN_CONFIG(__u32, endpoint_ipv4, v4_pod_one)
 
 #include "lib/endpoint.h"
 #include "lib/ipcache.h"
@@ -129,7 +128,7 @@ int hairpin_flow_forward_check(__maybe_unused const struct __ctx_buff *ctx)
 	if ((void *)l3 + sizeof(struct iphdr) > data_end)
 		test_fatal("l3 out of bounds");
 
-	if (l3->saddr != CONFIG(service_loopback_ipv4).be32)
+	if (l3->saddr != IPV4_LOOPBACK)
 		test_fatal("src IP was not SNAT'ed");
 
 	if (l3->daddr != v4_pod_one)
@@ -166,7 +165,7 @@ int hairpin_flow_forward_ingress_pktgen(struct __ctx_buff *ctx)
 	pktgen__init(&builder, ctx);
 
 	l3 = pktgen__push_ipv4_packet(&builder, (__u8 *)src, (__u8 *)dst,
-				      CONFIG(service_loopback_ipv4).be32, v4_pod_one);
+				      IPV4_LOOPBACK, v4_pod_one);
 	if (!l3)
 		return TEST_ERROR;
 
@@ -220,7 +219,7 @@ int hairpin_flow_forward_ingress_check(__maybe_unused const struct __ctx_buff *c
 	if ((void *)l3 + sizeof(struct iphdr) > data_end)
 		test_fatal("l3 out of bounds");
 
-	if (l3->saddr != CONFIG(service_loopback_ipv4).be32)
+	if (l3->saddr != IPV4_LOOPBACK)
 		test_fatal("src IP changed");
 
 	if (l3->daddr != v4_pod_one)
@@ -257,7 +256,7 @@ int hairpin_flow_rev_setup(struct __ctx_buff *ctx)
 	pktgen__init(&builder, ctx);
 
 	l3 = pktgen__push_ipv4_packet(&builder, (__u8 *)src, (__u8 *)dst,
-				      v4_pod_one, CONFIG(service_loopback_ipv4).be32);
+				      v4_pod_one, IPV4_LOOPBACK);
 	if (!l3)
 		return TEST_ERROR;
 
@@ -308,7 +307,7 @@ int hairpin_flow_rev_check(__maybe_unused const struct __ctx_buff *ctx)
 	if (l3->saddr != v4_pod_one)
 		test_fatal("src IP changed");
 
-	if (l3->daddr != CONFIG(service_loopback_ipv4).be32)
+	if (l3->daddr != IPV4_LOOPBACK)
 		test_fatal("dest IP changed");
 
 	l4 = (void *)l3 + sizeof(struct iphdr);
@@ -338,7 +337,7 @@ int hairpin_sctp_flow_4_reverse_ingress_v4_pktgen(struct __ctx_buff *ctx)
 	pktgen__init(&builder, ctx);
 
 	l3 = pktgen__push_ipv4_packet(&builder, (__u8 *)src, (__u8 *)dst,
-				      v4_pod_one, CONFIG(service_loopback_ipv4).be32);
+				      v4_pod_one, IPV4_LOOPBACK);
 	if (!l3)
 		return TEST_ERROR;
 

@@ -39,10 +39,10 @@ type wsmCommon struct {
 	log     *slog.Logger
 }
 
-func newWSMCommon(logger *slog.Logger) wsmCommon {
+func newWSMCommon(logger *slog.Logger, clusterName string) wsmCommon {
 	return wsmCommon{
 		functions: make(map[string]WSMFunc),
-		log:       logger,
+		log:       logger.With(logfields.ClusterName, clusterName),
 	}
 }
 
@@ -100,7 +100,7 @@ type wsmSync struct {
 // ephemeral kvstore is used.
 func newWatchStoreManagerSync(logger *slog.Logger, backend WatchStoreBackend, clusterName string, factory Factory) WatchStoreManager {
 	mgr := wsmSync{
-		wsmCommon:   newWSMCommon(logger.With(logfields.ClusterName, clusterName)),
+		wsmCommon:   newWSMCommon(logger, clusterName),
 		clusterName: clusterName,
 		backend:     backend,
 	}
@@ -127,9 +127,9 @@ type wsmImmediate struct {
 
 // NewWatchStoreManagerImmediate implements the WatchStoreManager interface,
 // immediately starting the registered functions once Run() is executed.
-func NewWatchStoreManagerImmediate(logger *slog.Logger) WatchStoreManager {
+func NewWatchStoreManagerImmediate(logger *slog.Logger, clusterName string) WatchStoreManager {
 	return &wsmImmediate{
-		wsmCommon: newWSMCommon(logger),
+		wsmCommon: newWSMCommon(logger, clusterName),
 	}
 }
 

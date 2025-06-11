@@ -14,7 +14,6 @@ import (
 	"github.com/cilium/cilium/api/v1/models"
 	"github.com/cilium/cilium/pkg/datapath/linux/safenetlink"
 	ipamOption "github.com/cilium/cilium/pkg/ipam/option"
-	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/plugins/cilium-cni/types"
 )
 
@@ -98,8 +97,6 @@ func (c *defaultEndpointConfiguration) PrepareEndpoint(ipam *models.IPAMResponse
 		ifindex, err := ifindexFromMac(ipam.IPV4.MasterMac)
 		if err == nil {
 			ep.ParentInterfaceIndex = ifindex
-		} else {
-			c.Log.Error("Unable to get interface index from MAC address", logfields.Error, err)
 		}
 	}
 

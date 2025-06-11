@@ -649,7 +649,7 @@ func TestNetworkPolicyCorrelationDisabled(t *testing.T) {
 		},
 	}
 
-	opts := []options.Option{options.WithNetworkPolicyCorrelation(false)}
+	opts := []options.Option{options.WithNetworkPolicyCorrelation(hivetest.Logger(t), false)}
 	parser, err := New(hivetest.Logger(t), endpointGetter, identityGetter, &testutils.NoopDNSGetter, &testutils.NoopIPGetter, &testutils.NoopServiceGetter, &testutils.NoopLinkGetter, opts...)
 	require.NoError(t, err)
 
@@ -1059,13 +1059,13 @@ func TestDecodeTrafficDirection(t *testing.T) {
 
 	ep, ok := endpointGetter.GetEndpointInfo(localIP)
 	assert.True(t, ok)
-	info, ok := ep.GetPolicyCorrelationInfoForKey(
+	strLbls, rev, ok := ep.GetRealizedPolicyRuleLabelsForKey(
 		policy.KeyForDirection(directionFromProto(f.GetTrafficDirection())).
 			WithIdentity(identity.NumericIdentity(f.GetDestination().GetIdentity())))
 	assert.True(t, ok)
-	lbls := labels.LabelArrayListFromString(info.RuleLabels)
+	lbls := labels.LabelArrayListFromString(strLbls)
 	assert.Equal(t, lbls, policyLabel)
-	assert.Equal(t, uint64(1), info.Revision)
+	assert.Equal(t, uint64(1), rev)
 
 	// PolicyVerdictNotify Ingress
 	pvn = monitor.PolicyVerdictNotify{

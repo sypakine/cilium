@@ -58,7 +58,7 @@ func init() {
 
 // printEndpointLabels pretty prints labels with tabs
 func printEndpointLabels(lbls *labels.OpLabels) {
-	log.Debug("All Labels", logfields.Labels, *lbls)
+	log.WithField(logfields.Labels, logfields.Repr(*lbls)).Debug("All Labels")
 	w := tabwriter.NewWriter(os.Stdout, 2, 0, 3, ' ', 0)
 
 	for _, v := range lbls.IdentityLabels() {

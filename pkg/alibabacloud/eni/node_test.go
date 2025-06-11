@@ -20,6 +20,7 @@ import (
 	metricsmock "github.com/cilium/cilium/pkg/ipam/metrics/mock"
 	ipamTypes "github.com/cilium/cilium/pkg/ipam/types"
 	v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
+	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/testutils"
 )
 
@@ -42,8 +43,7 @@ func setup(tb testing.TB) {
 	alibabaAPI = mock.NewAPI(subnets, vpcs, securityGroups)
 	require.NotNil(tb, alibabaAPI)
 	alibabaAPI.UpdateENIs(primaryENIs)
-	logger := hivetest.Logger(tb)
-	instances = NewInstancesManager(logger, alibabaAPI)
+	instances = NewInstancesManager(logging.DefaultSlogLogger, alibabaAPI)
 	require.NotNil(tb, instances)
 
 	tb.Cleanup(func() {
@@ -63,12 +63,11 @@ func TestGetMaximumAllocatableIPv4(t *testing.T) {
 
 func TestCreateInterface(t *testing.T) {
 	setup(t)
-	logger := hivetest.Logger(t)
 
 	alibabaAPI.UpdateENIs(primaryENIs)
 	instances.Resync(t.Context())
 
-	mngr, err := ipam.NewNodeManager(logger, instances, k8sapi, metricsapi, 10, false, false)
+	mngr, err := ipam.NewNodeManager(hivetest.Logger(t), instances, k8sapi, metricsapi, 10, false, false)
 	require.NoError(t, err)
 	require.NotNil(t, mngr)
 
@@ -89,9 +88,9 @@ func TestCreateInterface(t *testing.T) {
 		}
 		switch e.Type {
 		case eniTypes.ENITypeSecondary:
-			require.Equal(t, 1, utils.GetENIIndexFromTags(logger, e.Tags))
+			require.Equal(t, 1, utils.GetENIIndexFromTags(logging.DefaultSlogLogger, e.Tags))
 		case eniTypes.ENITypePrimary:
-			require.Equal(t, 0, utils.GetENIIndexFromTags(logger, e.Tags))
+			require.Equal(t, 0, utils.GetENIIndexFromTags(logging.DefaultSlogLogger, e.Tags))
 		}
 		return nil
 	})
@@ -101,7 +100,7 @@ func TestCreateInterface(t *testing.T) {
 			MaxIPsToAllocate: 10,
 		},
 		EmptyInterfaceSlots: 2,
-	}, logger)
+	}, logging.DefaultSlogLogger)
 	require.NoError(t, err)
 	require.Equal(t, 10, toAlloc)
 
@@ -110,19 +109,18 @@ func TestCreateInterface(t *testing.T) {
 			MaxIPsToAllocate: 11,
 		},
 		EmptyInterfaceSlots: 1,
-	}, logger)
+	}, logging.DefaultSlogLogger)
 	require.NoError(t, err)
 	require.Equal(t, 10, toAlloc)
 }
 
 func TestCandidateAndEmptyInterfaces(t *testing.T) {
 	setup(t)
-	logger := hivetest.Logger(t)
 
 	alibabaAPI.UpdateENIs(primaryENIs)
 	instances.Resync(t.Context())
 
-	mngr, err := ipam.NewNodeManager(logger, instances, k8sapi, metricsapi, 10, false, false)
+	mngr, err := ipam.NewNodeManager(hivetest.Logger(t), instances, k8sapi, metricsapi, 10, false, false)
 	require.NoError(t, err)
 	require.NotNil(t, mngr)
 	// Set PreAllocate as 1
@@ -130,7 +128,7 @@ func TestCandidateAndEmptyInterfaces(t *testing.T) {
 	cn.Spec.AlibabaCloud.VSwitches = []string{"vsw-2"}
 	mngr.Upsert(cn)
 
-	n := &Node{logger: logger}
+	n := &Node{logger: logging.DefaultSlogLogger}
 	n.k8sObj = cn
 	// Primary ENI excluded, max allocatable = 3 ( 1 (ENI) * 3 (IPv4/ENI) )
 	require.Equal(t, 3, n.GetMaximumAllocatableIPv4())
@@ -149,18 +147,17 @@ func TestCandidateAndEmptyInterfaces(t *testing.T) {
 
 func TestPrepareIPAllocation(t *testing.T) {
 	setup(t)
-	logger := hivetest.Logger(t)
 
 	alibabaAPI.UpdateENIs(primaryENIs)
 	instances.Resync(t.Context())
 
-	mngr, err := ipam.NewNodeManager(logger, instances, k8sapi, metricsapi, 10, false, false)
+	mngr, err := ipam.NewNodeManager(hivetest.Logger(t), instances, k8sapi, metricsapi, 10, false, false)
 	require.NoError(t, err)
 	require.NotNil(t, mngr)
 	mngr.SetInstancesAPIReadiness(false) // to avoid the manager background jobs starting and racing us.
 
 	mngr.Upsert(newCiliumNode("node1", "i-1", "ecs.g7ne.large", "cn-hangzhou-i", "vpc-1"))
-	a, err := mngr.Get("node1").Ops().PrepareIPAllocation(logger)
+	a, err := mngr.Get("node1").Ops().PrepareIPAllocation(logging.DefaultSlogLogger)
 	require.NoError(t, err)
 	require.Equal(t, 2, a.EmptyInterfaceSlots+a.IPv4.InterfaceCandidates, "empty: %v, candidates: %v", a.EmptyInterfaceSlots, a.IPv4.InterfaceCandidates)
 
@@ -170,12 +167,12 @@ func TestPrepareIPAllocation(t *testing.T) {
 			MaxIPsToAllocate: 10,
 		},
 		EmptyInterfaceSlots: 2,
-	}, logger)
+	}, logging.DefaultSlogLogger)
 	require.NoError(t, err)
 	require.Equal(t, 10, toAlloc)
 
 	// one eni left
-	a, err = mngr.Get("node1").Ops().PrepareIPAllocation(logger)
+	a, err = mngr.Get("node1").Ops().PrepareIPAllocation(logging.DefaultSlogLogger)
 	require.NoError(t, err)
 	require.Equal(t, 1, a.EmptyInterfaceSlots, "empty: %v, candidates: %v", a.EmptyInterfaceSlots, a.IPv4.InterfaceCandidates)
 }

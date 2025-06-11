@@ -8,5 +8,3 @@ spec:
     - toEndpoints:
         - matchLabels:
             kind: echo
-          matchExpressions:
-          - { key: io.cilium.k8s.policy.cluster, operator: Exists }

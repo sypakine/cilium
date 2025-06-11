@@ -8,7 +8,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/types"
 
-	cmtypes "github.com/cilium/cilium/pkg/clustermesh/types"
 	k8sConst "github.com/cilium/cilium/pkg/k8s/apis/cilium.io"
 	slim_metav1 "github.com/cilium/cilium/pkg/k8s/slim/k8s/apis/meta/v1"
 	"github.com/cilium/cilium/pkg/labels"
@@ -30,13 +29,6 @@ const (
 	// podAnyNamespaceLabelsPrefix is the prefix use in the label selector for namespace labels
 	// for any source type.
 	podAnyNamespaceLabelsPrefix = labels.LabelSourceAnyKeyPrefix + k8sConst.PodNamespaceMetaLabelsPrefix
-
-	// clusterPrefixLbl is the prefix use in the label selector for cluster name.
-	clusterPrefixLbl = labels.LabelSourceK8sKeyPrefix + k8sConst.PolicyLabelCluster
-
-	// clusterAnyPrefixLbl is the prefix use in the label selector for cluster name
-	// for any source type.
-	clusterAnyPrefixLbl = labels.LabelSourceAnyKeyPrefix + k8sConst.PolicyLabelCluster
 
 	// podInitLbl is the label used in a label selector to match on
 	// initializing pods.
@@ -69,21 +61,11 @@ func GetPolicyLabels(ns, name string, uid types.UID, derivedFrom string) labels.
 	return append(labelsArr, srcLabel)
 }
 
-// addClusterFilterByDefault attempt to add a cluster filter if the cluster name
-// is defined and that the EndpointSelector doesn't already have a cluster selector
-func addClusterFilterByDefault(es *api.EndpointSelector, clusterName string) {
-	if clusterName != cmtypes.PolicyAnyCluster && !es.HasKey(clusterPrefixLbl) && !es.HasKey(clusterAnyPrefixLbl) {
-		es.AddMatch(clusterPrefixLbl, clusterName)
-	}
-}
-
 // getEndpointSelector converts the provided labelSelector into an EndpointSelector,
-// adding the relevant matches for namespaces and clusters based on the provided options.
+// adding the relevant matches for namespaces based on the provided options.
 // If no namespace is provided then it is assumed that the selector is global to the cluster
 // this is when translating selectors for CiliumClusterwideNetworkPolicy.
-// If a clusterName is provided then is is assumed that the selector is scoped to the local
-// cluster by default in a ClusterMesh environment.
-func getEndpointSelector(clusterName, namespace string, labelSelector *slim_metav1.LabelSelector, addK8sPrefix, matchesInit bool) api.EndpointSelector {
+func getEndpointSelector(namespace string, labelSelector *slim_metav1.LabelSelector, addK8sPrefix, matchesInit bool) api.EndpointSelector {
 	es := api.NewESFromK8sLabelSelector("", labelSelector)
 
 	// The k8s prefix must not be added to reserved labels.
@@ -114,22 +96,17 @@ func getEndpointSelector(clusterName, namespace string, labelSelector *slim_meta
 		}
 	}
 
-	// Similarly to namespace, the user can explicitly specify the cluster in the
-	// FromEndpoints selector. If omitted, we limit the
-	// scope to the cluster the policy lives in.
-	addClusterFilterByDefault(&es, clusterName)
-
 	return es
 }
 
-func parseToCiliumIngressCommonRule(clusterName, namespace string, es api.EndpointSelector, ing api.IngressCommonRule) api.IngressCommonRule {
+func parseToCiliumIngressCommonRule(namespace string, es api.EndpointSelector, ing api.IngressCommonRule) api.IngressCommonRule {
 	matchesInit := matchesPodInit(es)
 	var retRule api.IngressCommonRule
 
 	if ing.FromEndpoints != nil {
 		retRule.FromEndpoints = make([]api.EndpointSelector, len(ing.FromEndpoints))
 		for j, ep := range ing.FromEndpoints {
-			retRule.FromEndpoints[j] = getEndpointSelector(clusterName, namespace, ep.LabelSelector, true, matchesInit)
+			retRule.FromEndpoints[j] = getEndpointSelector(namespace, ep.LabelSelector, true, matchesInit)
 		}
 	}
 
@@ -138,7 +115,6 @@ func parseToCiliumIngressCommonRule(clusterName, namespace string, es api.Endpoi
 		for j, node := range ing.FromNodes {
 			es = api.NewESFromK8sLabelSelector("", node.LabelSelector)
 			es.AddMatchExpression(labels.LabelSourceReservedKeyPrefix+labels.IDNameRemoteNode, slim_metav1.LabelSelectorOpExists, []string{})
-			addClusterFilterByDefault(&es, clusterName)
 			retRule.FromNodes[j] = es
 		}
 	}
@@ -156,7 +132,7 @@ func parseToCiliumIngressCommonRule(clusterName, namespace string, es api.Endpoi
 	if ing.FromRequires != nil {
 		retRule.FromRequires = make([]api.EndpointSelector, len(ing.FromRequires))
 		for j, ep := range ing.FromRequires {
-			retRule.FromRequires[j] = getEndpointSelector(clusterName, namespace, ep.LabelSelector, false, matchesInit)
+			retRule.FromRequires[j] = getEndpointSelector(namespace, ep.LabelSelector, false, matchesInit)
 		}
 	}
 
@@ -173,7 +149,7 @@ func parseToCiliumIngressCommonRule(clusterName, namespace string, es api.Endpoi
 	return retRule
 }
 
-func parseToCiliumIngressRule(clusterName, namespace string, es api.EndpointSelector, inRules []api.IngressRule) []api.IngressRule {
+func parseToCiliumIngressRule(namespace string, es api.EndpointSelector, inRules []api.IngressRule) []api.IngressRule {
 	var retRules []api.IngressRule
 
 	if inRules != nil {
@@ -187,7 +163,7 @@ func parseToCiliumIngressRule(clusterName, namespace string, es api.EndpointSele
 				retRules[i].ICMPs = make(api.ICMPRules, len(ing.ICMPs))
 				copy(retRules[i].ICMPs, ing.ICMPs)
 			}
-			retRules[i].IngressCommonRule = parseToCiliumIngressCommonRule(clusterName, namespace, es, ing.IngressCommonRule)
+			retRules[i].IngressCommonRule = parseToCiliumIngressCommonRule(namespace, es, ing.IngressCommonRule)
 			retRules[i].Authentication = ing.Authentication.DeepCopy()
 			retRules[i].SetAggregatedSelectors()
 		}
@@ -195,7 +171,7 @@ func parseToCiliumIngressRule(clusterName, namespace string, es api.EndpointSele
 	return retRules
 }
 
-func parseToCiliumIngressDenyRule(clusterName, namespace string, es api.EndpointSelector, inRules []api.IngressDenyRule) []api.IngressDenyRule {
+func parseToCiliumIngressDenyRule(namespace string, es api.EndpointSelector, inRules []api.IngressDenyRule) []api.IngressDenyRule {
 	var retRules []api.IngressDenyRule
 
 	if inRules != nil {
@@ -209,20 +185,20 @@ func parseToCiliumIngressDenyRule(clusterName, namespace string, es api.Endpoint
 				retRules[i].ICMPs = make(api.ICMPRules, len(ing.ICMPs))
 				copy(retRules[i].ICMPs, ing.ICMPs)
 			}
-			retRules[i].IngressCommonRule = parseToCiliumIngressCommonRule(clusterName, namespace, es, ing.IngressCommonRule)
+			retRules[i].IngressCommonRule = parseToCiliumIngressCommonRule(namespace, es, ing.IngressCommonRule)
 			retRules[i].SetAggregatedSelectors()
 		}
 	}
 	return retRules
 }
 
-func parseToCiliumEgressCommonRule(clusterName, namespace string, es api.EndpointSelector, egr api.EgressCommonRule) api.EgressCommonRule {
+func parseToCiliumEgressCommonRule(namespace string, es api.EndpointSelector, egr api.EgressCommonRule) api.EgressCommonRule {
 	matchesInit := matchesPodInit(es)
 	var retRule api.EgressCommonRule
 	if egr.ToEndpoints != nil {
 		retRule.ToEndpoints = make([]api.EndpointSelector, len(egr.ToEndpoints))
 		for j, ep := range egr.ToEndpoints {
-			endpointSelector := getEndpointSelector(clusterName, namespace, ep.LabelSelector, true, matchesInit)
+			endpointSelector := getEndpointSelector(namespace, ep.LabelSelector, true, matchesInit)
 			endpointSelector.Generated = ep.Generated
 			retRule.ToEndpoints[j] = endpointSelector
 		}
@@ -241,7 +217,7 @@ func parseToCiliumEgressCommonRule(clusterName, namespace string, es api.Endpoin
 	if egr.ToRequires != nil {
 		retRule.ToRequires = make([]api.EndpointSelector, len(egr.ToRequires))
 		for j, ep := range egr.ToRequires {
-			retRule.ToRequires[j] = getEndpointSelector(clusterName, namespace, ep.LabelSelector, false, matchesInit)
+			retRule.ToRequires[j] = getEndpointSelector(namespace, ep.LabelSelector, false, matchesInit)
 		}
 	}
 
@@ -260,7 +236,6 @@ func parseToCiliumEgressCommonRule(clusterName, namespace string, es api.Endpoin
 		for j, node := range egr.ToNodes {
 			es = api.NewESFromK8sLabelSelector("", node.LabelSelector)
 			es.AddMatchExpression(labels.LabelSourceReservedKeyPrefix+labels.IDNameRemoteNode, slim_metav1.LabelSelectorOpExists, []string{})
-			addClusterFilterByDefault(&es, clusterName)
 			retRule.ToNodes[j] = es
 		}
 	}
@@ -273,7 +248,7 @@ func parseToCiliumEgressCommonRule(clusterName, namespace string, es api.Endpoin
 	return retRule
 }
 
-func parseToCiliumEgressRule(clusterName, namespace string, es api.EndpointSelector, inRules []api.EgressRule) []api.EgressRule {
+func parseToCiliumEgressRule(namespace string, es api.EndpointSelector, inRules []api.EgressRule) []api.EgressRule {
 	var retRules []api.EgressRule
 
 	if inRules != nil {
@@ -294,7 +269,7 @@ func parseToCiliumEgressRule(clusterName, namespace string, es api.EndpointSelec
 				copy(retRules[i].ToFQDNs, egr.ToFQDNs)
 			}
 
-			retRules[i].EgressCommonRule = parseToCiliumEgressCommonRule(clusterName, namespace, es, egr.EgressCommonRule)
+			retRules[i].EgressCommonRule = parseToCiliumEgressCommonRule(namespace, es, egr.EgressCommonRule)
 			retRules[i].Authentication = egr.Authentication
 			retRules[i].SetAggregatedSelectors()
 		}
@@ -302,7 +277,7 @@ func parseToCiliumEgressRule(clusterName, namespace string, es api.EndpointSelec
 	return retRules
 }
 
-func parseToCiliumEgressDenyRule(clusterName, namespace string, es api.EndpointSelector, inRules []api.EgressDenyRule) []api.EgressDenyRule {
+func parseToCiliumEgressDenyRule(namespace string, es api.EndpointSelector, inRules []api.EgressDenyRule) []api.EgressDenyRule {
 	var retRules []api.EgressDenyRule
 
 	if inRules != nil {
@@ -318,7 +293,7 @@ func parseToCiliumEgressDenyRule(clusterName, namespace string, es api.EndpointS
 				copy(retRules[i].ICMPs, egr.ICMPs)
 			}
 
-			retRules[i].EgressCommonRule = parseToCiliumEgressCommonRule(clusterName, namespace, es, egr.EgressCommonRule)
+			retRules[i].EgressCommonRule = parseToCiliumEgressCommonRule(namespace, es, egr.EgressCommonRule)
 			retRules[i].SetAggregatedSelectors()
 		}
 	}
@@ -343,9 +318,8 @@ func namespacesAreValid(namespace string, userNamespaces []string) bool {
 // ParseToCiliumRule returns an api.Rule with all the labels parsed into cilium
 // labels. If the namespace provided is empty then the rule is cluster scoped, this
 // might happen in case of CiliumClusterwideNetworkPolicy which enforces a policy on the cluster
-// instead of the particular namespace. If the clusterName is provided then the
-// policy is scoped to the local cluster in a ClusterMesh environment.
-func ParseToCiliumRule(logger *slog.Logger, clusterName, namespace, name string, uid types.UID, r *api.Rule) *api.Rule {
+// instead of the particular namespace.
+func ParseToCiliumRule(logger *slog.Logger, namespace, name string, uid types.UID, r *api.Rule) *api.Rule {
 	retRule := &api.Rule{}
 	if r.EndpointSelector.LabelSelector != nil {
 		retRule.EndpointSelector = api.NewESFromK8sLabelSelector("", r.EndpointSelector.LabelSelector)
@@ -375,10 +349,10 @@ func ParseToCiliumRule(logger *slog.Logger, clusterName, namespace, name string,
 		retRule.NodeSelector = api.NewESFromK8sLabelSelector("", r.NodeSelector.LabelSelector)
 	}
 
-	retRule.Ingress = parseToCiliumIngressRule(clusterName, namespace, r.EndpointSelector, r.Ingress)
-	retRule.IngressDeny = parseToCiliumIngressDenyRule(clusterName, namespace, r.EndpointSelector, r.IngressDeny)
-	retRule.Egress = parseToCiliumEgressRule(clusterName, namespace, r.EndpointSelector, r.Egress)
-	retRule.EgressDeny = parseToCiliumEgressDenyRule(clusterName, namespace, r.EndpointSelector, r.EgressDeny)
+	retRule.Ingress = parseToCiliumIngressRule(namespace, r.EndpointSelector, r.Ingress)
+	retRule.IngressDeny = parseToCiliumIngressDenyRule(namespace, r.EndpointSelector, r.IngressDeny)
+	retRule.Egress = parseToCiliumEgressRule(namespace, r.EndpointSelector, r.Egress)
+	retRule.EgressDeny = parseToCiliumEgressDenyRule(namespace, r.EndpointSelector, r.EgressDeny)
 
 	retRule.Labels = ParseToCiliumLabels(namespace, name, uid, r.Labels)
 

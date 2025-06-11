@@ -16,6 +16,6 @@ var BPFCtCmd = &cobra.Command{
 }
 
 func init() {
-	ctmap.InitMapInfo(nil, true, true, true)
+	ctmap.InitMapInfo(true, true, true)
 	BPFCmd.AddCommand(BPFCtCmd)
 }

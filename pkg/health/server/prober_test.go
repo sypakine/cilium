@@ -10,7 +10,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/cilium/hive/hivetest"
 	"github.com/stretchr/testify/require"
 
 	ciliumModels "github.com/cilium/cilium/api/v1/health/models"
@@ -80,14 +79,13 @@ func sortNodes(nodes map[string][]*net.IPAddr) map[string][]*net.IPAddr {
 }
 
 func TestProbersetNodes(t *testing.T) {
-	logger := hivetest.Logger(t)
 	node1, node1IP, node1HealthIP := makeHealthNode(1, 1)
 	newNodes := nodeMap{
 		ipString(node1.Name): node1,
 	}
 
 	// First up: Just create a prober with some nodes.
-	prober := newProber(&Server{logger: logger}, newNodes)
+	prober := newProber(&Server{}, newNodes)
 	nodes := prober.getIPsByNode()
 	expected := map[string][]*net.IPAddr{
 		node1.Name: {{
@@ -196,7 +194,7 @@ func TestProbersetNodes(t *testing.T) {
 	newNodes3 := nodeMap{
 		ipString(node3.Name): node3,
 	}
-	nodes3 := newProber(&Server{logger: logger}, newNodes3).getIPsByNode()
+	nodes3 := newProber(&Server{}, newNodes3).getIPsByNode()
 	expected3 := map[string][]*net.IPAddr{
 		node3.Name: {{
 			IP: node3HealthIP,
@@ -220,7 +218,7 @@ func TestProbersetNodes(t *testing.T) {
 	newNodes4 := nodeMap{
 		ipString(node4.Name): node4,
 	}
-	prober4 := newProber(&Server{logger: logger}, newNodes4)
+	prober4 := newProber(&Server{}, newNodes4)
 	nodes4 := prober4.getIPsByNode()
 	expected4 := map[string][]*net.IPAddr{
 		node4.Name: {{

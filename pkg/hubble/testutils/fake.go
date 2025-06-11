@@ -459,13 +459,13 @@ func (e *FakeEndpointInfo) GetPod() *slim_corev1.Pod {
 	return e.Pod
 }
 
-func (e *FakeEndpointInfo) GetPolicyCorrelationInfoForKey(key policyTypes.Key) (
-	info policyTypes.PolicyCorrelationInfo,
+func (e *FakeEndpointInfo) GetRealizedPolicyRuleLabelsForKey(key policyTypes.Key) (
+	derivedFrom string,
+	revision uint64,
 	ok bool,
 ) {
-	info.RuleLabels, ok = e.PolicyMap[key]
-	info.Revision = e.PolicyRevision
-	return info, ok
+	derivedFrom, ok = e.PolicyMap[key]
+	return derivedFrom, e.PolicyRevision, ok
 }
 
 // FakePodMetadataGetter is used for unit tests that need a PodMetadataGetter.

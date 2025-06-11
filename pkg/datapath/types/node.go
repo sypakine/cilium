@@ -64,11 +64,9 @@ type LocalNodeConfiguration struct {
 	// NativeRoutingCIDRIPv6 is the v4 CIDR in which pod IPs are routable.
 	NativeRoutingCIDRIPv6 *cidr.CIDR
 
-	// LoopbackIPv4 is the source address used for SNAT when a Pod talks to itself
-	// over a Service.
-	//
+	// LoopbackIPv4 is the IPv4 loopback address.
 	// Immutable at runtime.
-	ServiceLoopbackIPv4 net.IP
+	LoopbackIPv4 net.IP
 
 	// Devices is the native network devices selected for datapath use.
 	// Mutable at runtime.

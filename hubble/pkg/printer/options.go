@@ -32,7 +32,6 @@ type Options struct {
 	enableDebug         bool
 	enableIPTranslation bool
 	nodeName            bool
-	policyNames         bool
 	timeFormat          string
 	color               string
 }
@@ -122,13 +121,6 @@ func WithIPTranslation() Option {
 func WithNodeName() Option {
 	return func(opts *Options) {
 		opts.nodeName = true
-	}
-}
-
-// WithPolicyNames enables printing the names of policies which allow / deny traffic
-func WithPolicyNames() Option {
-	return func(opts *Options) {
-		opts.policyNames = true
 	}
 }
 

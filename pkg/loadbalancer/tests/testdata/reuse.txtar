@@ -18,6 +18,7 @@
 #
 
 hive start
+db/initialized
 
 # Make a copy of service.yaml with a different name
 cp service.yaml service2.yaml

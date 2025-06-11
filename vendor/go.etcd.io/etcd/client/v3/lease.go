@@ -16,16 +16,15 @@ package clientv3
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"time"
+
+	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
+	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-
-	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
-	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 )
 
 type (
@@ -199,12 +198,12 @@ func NewLeaseFromLeaseClient(remote pb.LeaseClient, c *Client, keepAliveTimeout 
 		keepAlives:            make(map[LeaseID]*keepAlive),
 		remote:                remote,
 		firstKeepAliveTimeout: keepAliveTimeout,
+		lg:                    c.lg,
 	}
 	if l.firstKeepAliveTimeout == time.Second {
 		l.firstKeepAliveTimeout = defaultTTL
 	}
 	if c != nil {
-		l.lg = c.lg
 		l.callOpts = c.callOpts
 	}
 	reqLeaderCtx := WithRequireLeader(context.Background())
@@ -420,9 +419,9 @@ func (l *lessor) keepAliveOnce(ctx context.Context, id LeaseID) (karesp *LeaseKe
 	}
 
 	defer func() {
-		if cerr := stream.CloseSend(); cerr != nil {
+		if err := stream.CloseSend(); err != nil {
 			if ferr == nil {
-				ferr = ContextError(ctx, cerr)
+				ferr = ContextError(ctx, err)
 			}
 			return
 		}
@@ -461,9 +460,6 @@ func (l *lessor) recvKeepAliveLoop() (gerr error) {
 	for {
 		stream, err := l.resetRecv()
 		if err != nil {
-			l.lg.Warn("error occurred during lease keep alive loop",
-				zap.Error(err),
-			)
 			if canceledByCaller(l.stopCtx, err) {
 				return err
 			}
@@ -475,7 +471,7 @@ func (l *lessor) recvKeepAliveLoop() (gerr error) {
 						return err
 					}
 
-					if errors.Is(ContextError(l.stopCtx, err), rpctypes.ErrNoLeader) {
+					if ContextError(l.stopCtx, err) == rpctypes.ErrNoLeader {
 						l.closeRequireLeader()
 					}
 					break
@@ -560,12 +556,9 @@ func (l *lessor) recvKeepAlive(resp *pb.LeaseKeepAliveResponse) {
 // deadlineLoop reaps any keep alive channels that have not received a response
 // within the lease TTL
 func (l *lessor) deadlineLoop() {
-	timer := time.NewTimer(time.Second)
-	defer timer.Stop()
 	for {
-		timer.Reset(time.Second)
 		select {
-		case <-timer.C:
+		case <-time.After(time.Second):
 		case <-l.donec:
 			return
 		}
@@ -599,9 +592,7 @@ func (l *lessor) sendKeepAliveLoop(stream pb.Lease_LeaseKeepAliveClient) {
 		for _, id := range tosend {
 			r := &pb.LeaseKeepAliveRequest{ID: int64(id)}
 			if err := stream.Send(r); err != nil {
-				l.lg.Warn("error occurred during lease keep alive request sending",
-					zap.Error(err),
-				)
+				// TODO do something with this error?
 				return
 			}
 		}

@@ -292,12 +292,6 @@ func (ipam *LBIPAM) handleServiceEvent(ctx context.Context, event resource.Event
 }
 
 func (ipam *LBIPAM) poolOnUpsert(ctx context.Context, pool *cilium_api_v2.CiliumLoadBalancerIPPool) error {
-	if ipam.metrics.EventProcessingTime.IsEnabled() {
-		defer func(start time.Time) {
-			ipam.metrics.EventProcessingTime.WithLabelValues("upsert", "pool").Observe(time.Since(start).Seconds())
-		}(time.Now())
-	}
-
 	// Deep copy so we get a version we are allowed to update the status
 	pool = pool.DeepCopy()
 
@@ -336,12 +330,6 @@ func (ipam *LBIPAM) poolOnUpsert(ctx context.Context, pool *cilium_api_v2.Cilium
 }
 
 func (ipam *LBIPAM) poolOnDelete(ctx context.Context, pool *cilium_api_v2.CiliumLoadBalancerIPPool) error {
-	if ipam.metrics.EventProcessingTime.IsEnabled() {
-		defer func(start time.Time) {
-			ipam.metrics.EventProcessingTime.WithLabelValues("delete", "pool").Observe(time.Since(start).Seconds())
-		}(time.Now())
-	}
-
 	err := ipam.handlePoolDeleted(ctx, pool)
 	if err != nil {
 		return fmt.Errorf("handlePoolDeleted: %w", err)
@@ -361,12 +349,6 @@ func (ipam *LBIPAM) poolOnDelete(ctx context.Context, pool *cilium_api_v2.Cilium
 }
 
 func (ipam *LBIPAM) svcOnUpsert(ctx context.Context, svc *slim_core_v1.Service) error {
-	if ipam.metrics.EventProcessingTime.IsEnabled() {
-		defer func(start time.Time) {
-			ipam.metrics.EventProcessingTime.WithLabelValues("upsert", "service").Observe(time.Since(start).Seconds())
-		}(time.Now())
-	}
-
 	err := ipam.handleUpsertService(ctx, svc)
 	if err != nil {
 		return fmt.Errorf("handleUpsertService: %w", err)
@@ -381,12 +363,6 @@ func (ipam *LBIPAM) svcOnUpsert(ctx context.Context, svc *slim_core_v1.Service) 
 }
 
 func (ipam *LBIPAM) svcOnDelete(ctx context.Context, svc *slim_core_v1.Service) error {
-	if ipam.metrics.EventProcessingTime.IsEnabled() {
-		defer func(start time.Time) {
-			ipam.metrics.EventProcessingTime.WithLabelValues("delete", "service").Observe(time.Since(start).Seconds())
-		}(time.Now())
-	}
-
 	ipam.logger.Debug(fmt.Sprintf("Deleted service '%s/%s'", svc.GetNamespace(), svc.GetName()))
 
 	ipam.handleDeletedService(svc)

@@ -8,8 +8,9 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"sync/atomic"
 	"time"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/cilium/cilium/pkg/logging/logfields"
 )
@@ -20,7 +21,7 @@ const logrErrorKey = "err"
 var slogHandlerOpts = &slog.HandlerOptions{
 	AddSource:   false,
 	Level:       slogLeveler,
-	ReplaceAttr: replaceAttrFn,
+	ReplaceAttr: ReplaceAttrFnWithoutTimestamp,
 }
 
 var slogLeveler = func() *slog.LevelVar {
@@ -29,21 +30,42 @@ var slogLeveler = func() *slog.LevelVar {
 	return &levelVar
 }()
 
-var defaultMultiSlogHandler = NewMultiSlogHandler(slog.NewTextHandler(
+// Default slog logger. Will be overwritten once initializeSlog is called.
+var DefaultSlogLogger *slog.Logger = slog.New(slog.NewTextHandler(
 	os.Stderr,
 	slogHandlerOpts,
 ))
 
-// Default slog logger. Will be overwritten once initializeSlog is called.
-var DefaultSlogLogger = slog.New(defaultMultiSlogHandler)
+func slogLevel(l logrus.Level) slog.Level {
+	switch l {
+	case logrus.DebugLevel, logrus.TraceLevel:
+		return slog.LevelDebug
+	case logrus.InfoLevel:
+		return slog.LevelInfo
+	case logrus.WarnLevel:
+		return slog.LevelWarn
+	case logrus.ErrorLevel, logrus.PanicLevel, logrus.FatalLevel:
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
 
 // Approximates the logrus output via slog for job groups during the transition
 // phase.
 func initializeSlog(logOpts LogOptions, loggers []string) {
 	opts := *slogHandlerOpts
-	opts.Level = logOpts.GetLogLevel()
+	opts.Level = slogLevel(logOpts.GetLogLevel())
 	if opts.Level == slog.LevelDebug {
 		opts.AddSource = true
+	}
+
+	logFormat := logOpts.GetLogFormat()
+	switch logFormat {
+	case LogFormatJSON, LogFormatText:
+		opts.ReplaceAttr = ReplaceAttrFnWithoutTimestamp
+	case LogFormatJSONTimestamp, LogFormatTextTimestamp:
+		opts.ReplaceAttr = replaceAttrFn
 	}
 
 	writer := os.Stderr
@@ -55,24 +77,14 @@ func initializeSlog(logOpts LogOptions, loggers []string) {
 		}
 	}
 
-	logFormat := logOpts.GetLogFormat()
-	// Set first the option with or without timestamps
-	switch logFormat {
-	case LogFormatJSON, LogFormatText:
-		opts.ReplaceAttr = ReplaceAttrFnWithoutTimestamp
-	case LogFormatJSONTimestamp, LogFormatTextTimestamp:
-		opts.ReplaceAttr = replaceAttrFn
-	}
-
-	// Set the log format in either text or JSON
 	switch logFormat {
 	case LogFormatJSON, LogFormatJSONTimestamp:
-		defaultMultiSlogHandler.SetHandler(slog.NewJSONHandler(
+		DefaultSlogLogger = slog.New(slog.NewJSONHandler(
 			writer,
 			&opts,
 		))
 	case LogFormatText, LogFormatTextTimestamp:
-		defaultMultiSlogHandler.SetHandler(slog.NewTextHandler(
+		DefaultSlogLogger = slog.New(slog.NewTextHandler(
 			writer,
 			&opts,
 		))
@@ -88,7 +100,7 @@ func replaceAttrFn(groups []string, a slog.Attr) slog.Attr {
 	case slog.TimeKey:
 		// Adjust to timestamp format that logrus uses; except that we can't
 		// force slog to quote the value like logrus does...
-		return slog.String(slog.TimeKey, a.Value.Time().Format(time.RFC3339Nano))
+		return slog.String(slog.TimeKey, a.Value.Time().Format(time.RFC3339))
 	case slog.LevelKey:
 		// Lower-case the log level
 		return slog.Attr{
@@ -132,33 +144,17 @@ type FieldLogger interface {
 	ErrorContext(ctx context.Context, msg string, args ...any)
 }
 
-func init() {
-	// Set a no-op exit handler to avoid nil dereference
-	a := func() {}
-	exitHandler.Store(&a)
-}
-
-var (
-	exitHandler atomic.Pointer[func()]
-)
-
 func Fatal(logger FieldLogger, msg string, args ...any) {
 	logger.Error(msg, args...)
-	(*exitHandler.Load())()
 	os.Exit(-1)
 }
 
 func Panic(logger FieldLogger, msg string, args ...any) {
 	logger.Error(msg, args...)
-	(*exitHandler.Load())()
 	panic(msg)
 }
 
-func RegisterExitHandler(handler func()) {
-	exitHandler.Store(&handler)
-}
-
-// SetSlogLevel updates the DefaultSlogLogger with a new slog.Level
+// SetSlogLevel updates the DefaultSlogLogger with a new logrus.Level
 func SetSlogLevel(logLevel slog.Level) {
 	slogLeveler.Set(logLevel)
 }

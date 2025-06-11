@@ -13,8 +13,7 @@ spec:
     - health
     - kube-apiserver
   - toEndpoints:
-    - matchExpressions:
-      - { key: io.cilium.k8s.policy.cluster, operator: Exists }
+      - {}
   # When node-local-dns is deployed with local IP,
   # Cilium labels its ip as world.
   # This change prevents failing the connectivity
@@ -36,5 +35,4 @@ spec:
     - health
     - kube-apiserver
   - fromEndpoints:
-    - matchExpressions:
-      - { key: io.cilium.k8s.policy.cluster, operator: Exists }
+    - {}

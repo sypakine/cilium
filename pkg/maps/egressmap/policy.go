@@ -16,7 +16,6 @@ import (
 
 	"github.com/cilium/cilium/pkg/bpf"
 	"github.com/cilium/cilium/pkg/datapath/linux/config/defines"
-	"github.com/cilium/cilium/pkg/metrics"
 	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/types"
 )
@@ -56,11 +55,9 @@ type EgressPolicyKey6 struct {
 
 // EgressPolicyVal6 is the value of an egress policy map.
 type EgressPolicyVal6 struct {
-	EgressIP      types.IPv6 `align:"egress_ip"`
-	GatewayIP     types.IPv4 `align:"gateway_ip"`
-	Reserved      [3]uint32  `align:"reserved"`
-	EgressIfindex uint32     `align:"egress_ifindex"`
-	Reserved2     uint32     `align:"reserved2"`
+	EgressIP  types.IPv6 `align:"egress_ip"`
+	GatewayIP types.IPv4 `align:"gateway_ip"`
+	Reserved  [3]uint32  `align:"reserved"`
 }
 
 type PolicyConfig struct {
@@ -94,7 +91,6 @@ func createPolicyMapFromDaemonConfig(in struct {
 	Lifecycle cell.Lifecycle
 	*option.DaemonConfig
 	PolicyConfig
-	MetricsRegistry *metrics.Registry
 }) (out struct {
 	cell.Out
 
@@ -111,11 +107,11 @@ func createPolicyMapFromDaemonConfig(in struct {
 	}
 
 	if in.EnableIPv4 {
-		out.IPv4Map = bpf.NewMapOut(createPolicyMap4(in.Lifecycle, in.MetricsRegistry, in.PolicyConfig, ebpf.PinByName))
+		out.IPv4Map = bpf.NewMapOut(createPolicyMap4(in.Lifecycle, in.PolicyConfig, ebpf.PinByName))
 	}
 
 	if in.EnableIPv6 {
-		out.IPv6Map = bpf.NewMapOut(createPolicyMap6(in.Lifecycle, in.MetricsRegistry, in.PolicyConfig, ebpf.PinByName))
+		out.IPv6Map = bpf.NewMapOut(createPolicyMap6(in.Lifecycle, in.PolicyConfig, ebpf.PinByName))
 	}
 
 	return
@@ -124,18 +120,18 @@ func createPolicyMapFromDaemonConfig(in struct {
 // CreatePrivatePolicyMap4 creates an unpinned IPv4 policy map.
 //
 // Useful for testing.
-func CreatePrivatePolicyMap4(lc cell.Lifecycle, registry *metrics.Registry, cfg PolicyConfig) *PolicyMap4 {
-	return createPolicyMap4(lc, registry, cfg, ebpf.PinNone)
+func CreatePrivatePolicyMap4(lc cell.Lifecycle, cfg PolicyConfig) *PolicyMap4 {
+	return createPolicyMap4(lc, cfg, ebpf.PinNone)
 }
 
 // CreatePrivatePolicyMap6 creates an unpinned IPv6 policy map.
 //
 // Useful for testing.
-func CreatePrivatePolicyMap6(lc cell.Lifecycle, registry *metrics.Registry, cfg PolicyConfig) *PolicyMap6 {
-	return createPolicyMap6(lc, registry, cfg, ebpf.PinNone)
+func CreatePrivatePolicyMap6(lc cell.Lifecycle, cfg PolicyConfig) *PolicyMap6 {
+	return createPolicyMap6(lc, cfg, ebpf.PinNone)
 }
 
-func createPolicyMap4(lc cell.Lifecycle, registry *metrics.Registry, cfg PolicyConfig, pinning ebpf.PinType) *PolicyMap4 {
+func createPolicyMap4(lc cell.Lifecycle, cfg PolicyConfig, pinning ebpf.PinType) *PolicyMap4 {
 	m := bpf.NewMap(
 		PolicyMapName4,
 		ebpf.LPMTrie,
@@ -143,7 +139,7 @@ func createPolicyMap4(lc cell.Lifecycle, registry *metrics.Registry, cfg PolicyC
 		&EgressPolicyVal4{},
 		cfg.EgressGatewayPolicyMapMax,
 		0,
-	).WithPressureMetric(registry)
+	).WithPressureMetric()
 
 	lc.Append(cell.Hook{
 		OnStart: func(cell.HookContext) error {
@@ -163,7 +159,7 @@ func createPolicyMap4(lc cell.Lifecycle, registry *metrics.Registry, cfg PolicyC
 	return &PolicyMap4{m}
 }
 
-func createPolicyMap6(lc cell.Lifecycle, registry *metrics.Registry, cfg PolicyConfig, pinning ebpf.PinType) *PolicyMap6 {
+func createPolicyMap6(lc cell.Lifecycle, cfg PolicyConfig, pinning ebpf.PinType) *PolicyMap6 {
 	m := bpf.NewMap(
 		PolicyMapName6,
 		ebpf.LPMTrie,
@@ -171,7 +167,7 @@ func createPolicyMap6(lc cell.Lifecycle, registry *metrics.Registry, cfg PolicyC
 		&EgressPolicyVal6{},
 		cfg.EgressGatewayPolicyMapMax,
 		0,
-	).WithPressureMetric(registry)
+	).WithPressureMetric()
 
 	lc.Append(cell.Hook{
 		OnStart: func(cell.HookContext) error {

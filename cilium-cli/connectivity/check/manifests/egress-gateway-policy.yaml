@@ -15,4 +15,3 @@ spec:
     nodeSelector:
       matchLabels:
         kubernetes.io/hostname: NODE_NAME_PLACEHOLDER
-  egressGateways: [] # set by the check package in WithCiliumEgressGatewayPolicy()

@@ -4,18 +4,14 @@
 package metrics
 
 import (
-	"log/slog"
-
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sirupsen/logrus"
 
 	clientPkg "github.com/cilium/cilium/pkg/client"
 	healthClientPkg "github.com/cilium/cilium/pkg/health/client"
-	"github.com/cilium/cilium/pkg/logging"
-	"github.com/cilium/cilium/pkg/logging/logfields"
 )
 
 type statusCollector struct {
-	logger                   *slog.Logger
 	daemonHealthGetter       daemonHealthGetter
 	connectivityStatusGetter connectivityStatusGetter
 
@@ -25,24 +21,23 @@ type statusCollector struct {
 	unreachableHealthEndpointsDesc *prometheus.Desc
 }
 
-func newStatusCollector(logger *slog.Logger) *statusCollector {
+func newStatusCollector() *statusCollector {
 	ciliumClient, err := clientPkg.NewClient("")
 	if err != nil {
-		logging.Fatal(logger, "Error while creating Cilium API client", logfields.Error, err)
+		logrus.WithError(err).Fatal("Error while creating Cilium API client")
 	}
 
 	healthClient, err := healthClientPkg.NewClient("")
 	if err != nil {
-		logging.Fatal(logger, "Error while creating cilium-health API client", logfields.Error, err)
+		logrus.WithError(err).Fatal("Error while creating cilium-health API client")
 	}
 
-	return newStatusCollectorWithClients(logger, ciliumClient.Daemon, healthClient.Connectivity)
+	return newStatusCollectorWithClients(ciliumClient.Daemon, healthClient.Connectivity)
 }
 
 // newStatusCollectorWithClients provides a constructor with injected clients
-func newStatusCollectorWithClients(logger *slog.Logger, d daemonHealthGetter, c connectivityStatusGetter) *statusCollector {
+func newStatusCollectorWithClients(d daemonHealthGetter, c connectivityStatusGetter) *statusCollector {
 	return &statusCollector{
-		logger:                   logger,
 		daemonHealthGetter:       d,
 		connectivityStatusGetter: c,
 		controllersFailingDesc: prometheus.NewDesc(
@@ -78,7 +73,7 @@ func (s *statusCollector) Describe(ch chan<- *prometheus.Desc) {
 func (s *statusCollector) Collect(ch chan<- prometheus.Metric) {
 	statusResponse, err := s.daemonHealthGetter.GetHealthz(nil)
 	if err != nil {
-		s.logger.Error("Error while getting Cilium status", logfields.Error, err)
+		logrus.WithError(err).Error("Error while getting Cilium status")
 		return
 	}
 
@@ -123,7 +118,7 @@ func (s *statusCollector) Collect(ch chan<- prometheus.Metric) {
 
 	healthStatusResponse, err := s.connectivityStatusGetter.GetStatus(nil)
 	if err != nil {
-		s.logger.Error("Error while getting cilium-health status", logfields.Error, err)
+		logrus.WithError(err).Error("Error while getting cilium-health status")
 		return
 	}
 

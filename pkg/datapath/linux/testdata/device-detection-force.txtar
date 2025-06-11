@@ -2,8 +2,9 @@
 
 # Tests the behavior of device detection when forced detection is enabled.
 
-# Start the hive
+# Start the hive and wait for tables to be synchronized.
 hive start
+db/initialized
 
 # Add dummy0 interface - matches devices wildcard, should be selected.
 exec ip link add dummy0 type dummy

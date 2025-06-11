@@ -84,8 +84,9 @@ func newEndpointUpdater(p endpointUpdaterParams) EndpointMTUUpdater {
 
 	// If we are not in chaining mode, or if we are in chaining mode and the CNI config requests us to manage route MTU
 	// Start the endpoint updater
-	jobGroup := p.JobRegistry.NewGroup(p.Health, p.Lifecycle)
+	jobGroup := p.JobRegistry.NewGroup(p.Health)
 	jobGroup.Add(job.OneShot("endpoint-mtu-updater", endpointUpdater.Updater))
+	p.Lifecycle.Append(jobGroup)
 
 	return &endpointUpdater
 }
@@ -266,7 +267,7 @@ func (emu *endpointUpdater) updateEndpoints(routeMTUs []RouteMTU) error {
 			// to do syscalls for the switching. If the netns is deleted between the time we open it and
 			// the time of calling ns.Do, we get an -EINVAL error, since the file descriptor is no longer valid.
 			// We ignore this error, since it means the netns and thus the endpoint was deleted.
-			if errors.Is(err, unix.EINVAL) {
+			if errors.Is(err, os.ErrInvalid) {
 				continue
 			}
 

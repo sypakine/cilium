@@ -4,9 +4,10 @@
 package proxy
 
 import (
+	"errors"
 	"log/slog"
 
-	fqdnproxy "github.com/cilium/cilium/pkg/fqdn/proxy"
+	"github.com/cilium/cilium/pkg/fqdn/defaultdns"
 	"github.com/cilium/cilium/pkg/fqdn/service"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/policy"
@@ -16,7 +17,7 @@ import (
 // dnsRedirect implements the Redirect interface for an l7 proxy
 type dnsRedirect struct {
 	Redirect
-	dnsProxy fqdnproxy.DNSProxier
+	dnsProxy defaultdns.Proxy
 }
 
 func (dr *dnsRedirect) GetRedirect() *Redirect {
@@ -30,8 +31,11 @@ func (dr *dnsRedirect) setRules(newRules policy.L7DataMap) (revert.RevertFunc, e
 		logfields.NewRules, newRules,
 		logfields.EndpointID, dr.endpointID,
 	)
-
-	return dr.dnsProxy.UpdateAllowed(uint64(dr.endpointID), dr.dstPortProto, newRules)
+	dnsProxy := dr.dnsProxy.Get()
+	if dnsProxy == nil {
+		return nil, errors.New("no dns proxy exists to update")
+	}
+	return dnsProxy.UpdateAllowed(uint64(dr.endpointID), dr.dstPortProto, newRules)
 }
 
 // UpdateRules atomically replaces the proxy rules in effect for this redirect.
@@ -47,7 +51,7 @@ func (dr *dnsRedirect) Close() {
 }
 
 type dnsProxyIntegration struct {
-	dnsProxy         fqdnproxy.DNSProxier
+	dnsProxy         defaultdns.Proxy
 	sdpPolicyUpdater service.PolicyUpdater
 }
 

@@ -5,6 +5,7 @@ package monitor
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -496,7 +497,7 @@ func Test_OnMonitorEvent(t *testing.T) {
 			assert.NoError(t, err)
 
 			for _, event := range tc.events {
-				stop, err := mf.OnMonitorEvent(t.Context(), event.event)
+				stop, err := mf.OnMonitorEvent(context.Background(), event.event)
 				assert.Equal(t, event.expectedErr, err)
 				assert.Equal(t, event.stop, stop)
 			}

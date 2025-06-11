@@ -8,18 +8,15 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"reflect"
 	"strings"
-	"unsafe"
+	"time"
 
 	"github.com/cilium/hive"
 	"github.com/cilium/hive/cell"
 	"github.com/cilium/hive/script"
-	"github.com/cilium/statedb"
 	"github.com/spf13/pflag"
 	apiext_fake "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
 	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
@@ -30,23 +27,20 @@ import (
 	mcsapi_fake "sigs.k8s.io/mcs-api/pkg/client/clientset/versioned/fake"
 	k8sYaml "sigs.k8s.io/yaml"
 
-	"github.com/cilium/cilium/pkg/container"
 	cilium_fake "github.com/cilium/cilium/pkg/k8s/client/clientset/versioned/fake"
 	slim_clientset "github.com/cilium/cilium/pkg/k8s/slim/k8s/client/clientset/versioned"
 	slim_fake "github.com/cilium/cilium/pkg/k8s/slim/k8s/client/clientset/versioned/fake"
 	"github.com/cilium/cilium/pkg/k8s/testutils"
+	"github.com/cilium/cilium/pkg/lock"
+	"github.com/cilium/cilium/pkg/logging/logfields"
 )
 
 var FakeClientCell = cell.Module(
 	"k8s-fake-client",
 	"Fake Kubernetes client",
 
-	cell.ProvidePrivate(
-		newStateDBObjectTracker,
-	),
-
 	cell.Provide(
-		NewFakeClientsetWithTracker,
+		NewFakeClientset,
 		func(fc *FakeClientset) hive.ScriptCmdsOut {
 			return hive.NewScriptCmds(FakeClientCommands(fc))
 		},
@@ -72,10 +66,9 @@ type FakeClientset struct {
 
 	SlimFakeClientset *SlimFakeClientset
 
-	trackers []struct {
-		domain  string
-		tracker k8sTesting.ObjectTracker
-	}
+	trackers map[string]k8sTesting.ObjectTracker
+
+	watchers lock.Map[string, struct{}]
 }
 
 var _ Clientset = &FakeClientset{}
@@ -107,32 +100,26 @@ func (c *FakeClientset) RestConfig() *rest.Config {
 }
 
 func NewFakeClientset(log *slog.Logger) (*FakeClientset, Clientset) {
-	return NewFakeClientsetWithTracker(log, nil)
-}
-
-func NewFakeClientsetWithTracker(log *slog.Logger, ot *statedbObjectTracker) (*FakeClientset, Clientset) {
 	version := testutils.DefaultVersion
-	return NewFakeClientsetWithVersion(log, ot, version)
+	return NewFakeClientsetWithVersion(log, version)
 }
 
-func NewFakeClientsetWithVersion(log *slog.Logger, ot *statedbObjectTracker, version string) (*FakeClientset, Clientset) {
+// trackerPreference has the trackers in preference order,
+// e.g. which tracker to look into first for k8s/get or k8s/list.
+// We prefer the slim one over the kubernetes one as that's the one
+// likely used in Cilium.
+var trackerPreference = []string{
+	"slim",
+	"cilium",
+	"mcs",
+	"apiext",
+	"kubernetes",
+}
+
+func NewFakeClientsetWithVersion(log *slog.Logger, version string) (*FakeClientset, Clientset) {
 	if version == "" {
 		version = testutils.DefaultVersion
 	}
-
-	if ot == nil {
-		// For easier use in tests we'll allow a nil [ot] and just create
-		// it from scratch here. We don't do that by default since we do
-		// want to use the main StateDB instance to make 'k8s-object-tracker'
-		// table inspectable.
-		db := statedb.New()
-		var err error
-		ot, err = newStateDBObjectTracker(db, log)
-		if err != nil {
-			panic(err)
-		}
-	}
-
 	resources, found := testutils.APIResources[version]
 	if !found {
 		panic("version " + version + " not found from testutils.APIResources")
@@ -149,25 +136,12 @@ func NewFakeClientsetWithVersion(log *slog.Logger, ot *statedbObjectTracker, ver
 	client.SlimFakeClientset.Resources = resources
 	client.CiliumFakeClientset.Resources = resources
 	client.APIExtFakeClientset.Resources = resources
-
-	otx := ot.For("*", testutils.Scheme, testutils.Decoder())
-	prependReactors(client.SlimFakeClientset, otx)
-	prependReactors(client.CiliumFakeClientset, otx)
-	prependReactors(client.MCSAPIFakeClientset, otx)
-	prependReactors(client.APIExtFakeClientset, otx)
-
-	// Use a separate object tracker domain for the "kubernetes" objects. This is needed
-	// to avoid overlap with the Slim clientset since they have the same GVR but different
-	// Go types.
-	otk := ot.For("k8s", testutils.KubernetesScheme, testutils.KubernetesDecoder())
-	prependReactors(client.KubernetesFakeClientset, otk)
-
-	client.trackers = []struct {
-		domain  string
-		tracker k8sTesting.ObjectTracker
-	}{
-		{domain: "*", tracker: otx},
-		{domain: "k8s", tracker: otk},
+	client.trackers = map[string]k8sTesting.ObjectTracker{
+		"slim":       augmentTracker(log, client.SlimFakeClientset, &client.watchers),
+		"cilium":     augmentTracker(log, client.CiliumFakeClientset, &client.watchers),
+		"mcs":        augmentTracker(log, client.MCSAPIFakeClientset, &client.watchers),
+		"kubernetes": augmentTracker(log, client.KubernetesFakeClientset, &client.watchers),
+		"apiext":     augmentTracker(log, client.APIExtFakeClientset, &client.watchers),
 	}
 
 	fd := client.KubernetesFakeClientset.Discovery().(*fakediscovery.FakeDiscovery)
@@ -177,42 +151,13 @@ func NewFakeClientsetWithVersion(log *slog.Logger, ot *statedbObjectTracker, ver
 	return &client, &client
 }
 
-var FakeClientBuilderCell = cell.Group(
-	cell.ProvidePrivate(newStateDBObjectTracker),
-	cell.Provide(FakeClientBuilder),
-)
+var FakeClientBuilderCell = cell.Provide(FakeClientBuilder)
 
-func FakeClientBuilder(log *slog.Logger, ot *statedbObjectTracker) ClientBuilderFunc {
-	fc, _ := NewFakeClientsetWithTracker(log, ot)
+func FakeClientBuilder(log *slog.Logger) ClientBuilderFunc {
+	fc, _ := NewFakeClientset(log)
 	return func(_ string) (Clientset, error) {
 		return fc, nil
 	}
-}
-
-type prepender interface {
-	PrependReactor(verb string, resource string, reaction k8sTesting.ReactionFunc)
-	PrependWatchReactor(resource string, reaction k8sTesting.WatchReactionFunc)
-	Tracker() k8sTesting.ObjectTracker
-}
-
-func prependReactors(cs prepender, ot *statedbObjectTracker) {
-	cs.PrependReactor("*", "*", k8sTesting.ObjectReaction(ot))
-	cs.PrependWatchReactor("*", func(action k8sTesting.Action) (handled bool, ret watch.Interface, err error) {
-		var opts metav1.ListOptions
-		if watchAction, ok := action.(k8sTesting.WatchActionImpl); ok {
-			opts = watchAction.ListOptions
-		}
-		gvr := action.GetResource()
-		ns := action.GetNamespace()
-		watch, err := ot.Watch(gvr, ns, opts)
-		if err != nil {
-			return false, nil, err
-		}
-		return true, watch, nil
-	})
-
-	// Switch out the tracker to our version.
-	overrideTracker(cs, ot)
 }
 
 func showGVR(gvr schema.GroupVersionResource) string {
@@ -223,8 +168,7 @@ func showGVR(gvr schema.GroupVersionResource) string {
 }
 
 func FakeClientCommands(fc *FakeClientset) map[string]script.Cmd {
-	// Use a InsertOrderedMap to keep e.g. k8s/summary output stable.
-	seenResources := container.NewInsertOrderedMap[schema.GroupVersionKind, schema.GroupVersionResource]()
+	seenResources := map[schema.GroupVersionKind]schema.GroupVersionResource{}
 
 	addUpdateOrDelete := func(s *script.State, action string, files []string) error {
 		for _, file := range files {
@@ -240,13 +184,12 @@ func FakeClientCommands(fc *FakeClientset) map[string]script.Cmd {
 			if err != nil {
 				return fmt.Errorf("decode: %w", err)
 			}
-			kobj, _, _ := testutils.DecodeKubernetesObject(b)
 			gvr, _ := meta.UnsafeGuessKindToResource(*gvk)
 			objMeta, err := meta.Accessor(obj)
 			if err != nil {
 				return fmt.Errorf("accessor: %w", err)
 			}
-			seenResources.Insert(*gvk, gvr)
+			seenResources[*gvk] = gvr
 
 			name := objMeta.GetName()
 			ns := objMeta.GetNamespace()
@@ -258,29 +201,22 @@ func FakeClientCommands(fc *FakeClientset) map[string]script.Cmd {
 			// err will get set to nil if any of the tracker methods succeed.
 			// start with a non-nil default error.
 			err = fmt.Errorf("none of the trackers of FakeClientset accepted %T", obj)
-			for _, tc := range fc.trackers {
-				o := obj
-				if tc.domain == "k8s" {
-					o = kobj
-					if o == nil {
-						continue
-					}
-				}
+			for trackerName, tracker := range fc.trackers {
 				var trackerErr error
 				switch action {
 				case "add":
-					trackerErr = tc.tracker.Add(o)
+					trackerErr = tracker.Add(obj)
 				case "update":
-					trackerErr = tc.tracker.Update(gvr, o, ns)
+					trackerErr = tracker.Update(gvr, obj, ns)
 				case "delete":
-					trackerErr = tc.tracker.Delete(gvr, ns, name)
+					trackerErr = tracker.Delete(gvr, ns, name)
 				}
 				if err != nil {
 					if trackerErr == nil {
 						// One of the trackers accepted the object, it's a success!
 						err = nil
 					} else {
-						err = errors.Join(err, fmt.Errorf("%s: %w", tc.domain, trackerErr))
+						err = errors.Join(err, fmt.Errorf("%s: %w", trackerName, trackerErr))
 					}
 				}
 			}
@@ -305,7 +241,6 @@ func FakeClientCommands(fc *FakeClientset) map[string]script.Cmd {
 				if len(args) == 0 {
 					return nil, script.ErrUsage
 				}
-
 				return nil, addUpdateOrDelete(s, "add", args)
 			},
 		),
@@ -358,7 +293,7 @@ func FakeClientCommands(fc *FakeClientset) map[string]script.Cmd {
 				}
 
 				var gvr schema.GroupVersionResource
-				for _, r := range seenResources.All() {
+				for _, r := range seenResources {
 					res := showGVR(r)
 					if res == args[0] {
 						gvr = r
@@ -381,8 +316,9 @@ func FakeClientCommands(fc *FakeClientset) map[string]script.Cmd {
 
 				return func(s *script.State) (stdout string, stderr string, err error) {
 					var trackerErr error
-					for _, tc := range fc.trackers {
-						obj, err := tc.tracker.Get(gvr, ns, name)
+					for _, trackerName := range trackerPreference {
+						tracker := fc.trackers[trackerName]
+						obj, err := tracker.Get(gvr, ns, name)
 						if err == nil {
 							bs, err := k8sYaml.Marshal(obj)
 							if file != "" {
@@ -420,7 +356,7 @@ func FakeClientCommands(fc *FakeClientset) map[string]script.Cmd {
 
 				var gvr schema.GroupVersionResource
 				var gvk schema.GroupVersionKind
-				for k, r := range seenResources.All() {
+				for k, r := range seenResources {
 					res := showGVR(r)
 					if res == args[0] {
 						gvr = r
@@ -439,8 +375,9 @@ func FakeClientCommands(fc *FakeClientset) map[string]script.Cmd {
 
 				return func(s *script.State) (stdout string, stderr string, err error) {
 					var trackerErr error
-					for _, tc := range fc.trackers {
-						obj, err := tc.tracker.List(gvr, gvk, args[1])
+					for _, trackerName := range trackerPreference {
+						tracker := fc.trackers[trackerName]
+						obj, err := tracker.List(gvr, gvk, args[1])
 						if err == nil {
 							bs, err := k8sYaml.Marshal(obj)
 							if file != "" {
@@ -458,28 +395,19 @@ func FakeClientCommands(fc *FakeClientset) map[string]script.Cmd {
 		"k8s/summary": script.Command(
 			script.CmdUsage{
 				Summary: "Show a summary of object trackers",
-				Args:    "(output file)",
 				Detail: []string{
-					"Lists each object tracker and the objects stored within",
+					"Lists each object tracker and the objects stored within.",
 				},
 			},
 			func(s *script.State, args ...string) (script.WaitFunc, error) {
-				out := s.LogWriter()
-				if len(args) == 1 {
-					f, err := os.OpenFile(s.Path(args[0]), os.O_CREATE|os.O_WRONLY, 0644)
-					if err != nil {
-						return nil, err
-					}
-					defer f.Close()
-					out = f
-				}
-				for _, tc := range fc.trackers {
-					fmt.Fprintf(out, "%s:\n", tc.domain)
-					for gvk, gvr := range seenResources.All() {
-						objs, err := tc.tracker.List(gvr, gvk, "")
+				for _, trackerName := range trackerPreference {
+					tracker := fc.trackers[trackerName]
+					s.Logf("%s:\n", trackerName)
+					for gvk, gvr := range seenResources {
+						objs, err := tracker.List(gvr, gvk, "")
 						if err == nil {
 							lst, _ := meta.ExtractList(objs)
-							fmt.Fprintf(out, "- %s: %d\n", showGVR(gvr), len(lst))
+							s.Logf("- %s: %d\n", showGVR(gvr), len(lst))
 						}
 					}
 				}
@@ -494,7 +422,7 @@ func FakeClientCommands(fc *FakeClientset) map[string]script.Cmd {
 			func(s *script.State, args ...string) (script.WaitFunc, error) {
 				return func(s *script.State) (stdout string, stderr string, err error) {
 					var buf strings.Builder
-					for _, gvr := range seenResources.All() {
+					for _, gvr := range seenResources {
 						fmt.Fprintf(&buf, "%s\n", showGVR(gvr))
 					}
 					stdout = buf.String()
@@ -502,23 +430,82 @@ func FakeClientCommands(fc *FakeClientset) map[string]script.Cmd {
 				}, nil
 			},
 		),
+
+		"k8s/wait-watchers": script.Command(
+			script.CmdUsage{
+				Summary: "Wait for watchers for given resources to appear",
+				Detail: []string{
+					"Takes a list of resources and waits for a Watch() to appear for it.",
+					"",
+					"Useful when working with an informer/reflector that is not backed by",
+					"a StateDB table and thus cannot use 'db/initialized'.",
+				},
+				Args: "resources...",
+			},
+			func(s *script.State, args ...string) (script.WaitFunc, error) {
+				resources := map[string]struct{}{}
+				for _, r := range args {
+					resources[r] = struct{}{}
+				}
+				for s.Context().Err() == nil && len(resources) > 0 {
+					for r := range resources {
+						_, ok := fc.watchers.Load(r)
+						if ok {
+							delete(resources, r)
+						}
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				if len(resources) > 0 {
+					seen := []string{}
+					fc.watchers.Range(func(key string, value struct{}) bool {
+						seen = append(seen, key)
+						return true
+					})
+					return nil, fmt.Errorf("watchers did not appear. saw: %v", seen)
+				}
+				return nil, nil
+			},
+		),
 	}
+
 }
 
-// overrideTracker changes the internal 'tracker' field in the generated
-// clientset to point to our object tracker. This allows using the Tracker()
-// method without ending up getting the wrong one.
-func overrideTracker(cs prepender, ot k8sTesting.ObjectTracker) {
-	type fakeLayout struct {
-		k8sTesting.Fake
-		discovery uintptr
-		tracker   k8sTesting.ObjectTracker
-	}
+type fakeWithTracker interface {
+	PrependReactor(verb string, resource string, reaction k8sTesting.ReactionFunc)
+	PrependWatchReactor(resource string, reaction k8sTesting.WatchReactionFunc)
+	Tracker() k8sTesting.ObjectTracker
+}
 
-	f := (*fakeLayout)(unsafe.Pointer(reflect.ValueOf(cs).Pointer()))
-	f.tracker = ot
+// augmentTracker augments the fake clientset to record watchers.
+// The reason we need to do this is the following: The k8s object tracker's implementation
+// of Watch is not equivalent to Watch on a real api-server, as it does not respect the
+// ResourceVersion from whence to start the watch. As a consequence, when informers (or
+// reflectors) call ListAndWatch, they miss events which occur between the end of List and
+// the establishment of Watch.
+func augmentTracker[T fakeWithTracker](log *slog.Logger, f T, watchers *lock.Map[string, struct{}]) k8sTesting.ObjectTracker {
+	o := f.Tracker()
 
-	if cs.Tracker() != ot {
-		panic("overrideTracker failed, layout changed?")
-	}
+	f.PrependWatchReactor(
+		"*",
+		func(action k8sTesting.Action) (handled bool, ret watch.Interface, err error) {
+			w := action.(k8sTesting.WatchAction)
+			gvr := w.GetResource()
+			ns := w.GetNamespace()
+			watch, err := o.Watch(gvr, ns)
+			if err != nil {
+				return false, nil, err
+			}
+			watchName := showGVR(gvr)
+			if _, ok := watchers.Load(watchName); ok {
+				log.Warn("Multiple watches for resource intercepted. This highlights a potential cause for flakes", logfields.Resource, watchName)
+			}
+
+			log.Debug("Watch started", logfields.Resource, watchName)
+			watchers.Store(watchName, struct{}{})
+
+			return true, watch, nil
+		})
+
+	return o
 }

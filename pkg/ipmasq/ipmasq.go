@@ -6,7 +6,6 @@ package ipmasq
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"maps"
 	"net/netip"
 	"os"
@@ -16,12 +15,14 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"k8s.io/apimachinery/pkg/util/yaml"
 
+	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/maps/ipmasq"
-	"github.com/cilium/cilium/pkg/metrics"
 )
 
 var (
+	log = logging.DefaultLogger.WithField(logfields.LogSubsys, "ipmasq")
+
 	// The following reserved by RFCs IP addr ranges are used by
 	// https://github.com/kubernetes-sigs/ip-masq-agent
 	defaultNonMasqCIDRs = map[string]netip.Prefix{
@@ -87,7 +88,6 @@ type IPMasqMap interface {
 
 // IPMasqAgent represents a state of the ip-masq-agent
 type IPMasqAgent struct {
-	logger                 *slog.Logger
 	configPath             string
 	masqLinkLocalIPv4      bool
 	masqLinkLocalIPv6      bool
@@ -99,11 +99,11 @@ type IPMasqAgent struct {
 	handlerFinished        chan struct{}
 }
 
-func NewIPMasqAgent(logger *slog.Logger, reg *metrics.Registry, configPath string) (*IPMasqAgent, error) {
-	return newIPMasqAgent(logger, configPath, &ipmasq.IPMasqBPFMap{MetricsRegistry: reg})
+func NewIPMasqAgent(configPath string) (*IPMasqAgent, error) {
+	return newIPMasqAgent(configPath, &ipmasq.IPMasqBPFMap{})
 }
 
-func newIPMasqAgent(logger *slog.Logger, configPath string, ipMasqMap IPMasqMap) (*IPMasqAgent, error) {
+func newIPMasqAgent(configPath string, ipMasqMap IPMasqMap) (*IPMasqAgent, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create fsnotify watcher: %w", err)
@@ -118,7 +118,6 @@ func newIPMasqAgent(logger *slog.Logger, configPath string, ipMasqMap IPMasqMap)
 	}
 
 	a := &IPMasqAgent{
-		logger:                 logger,
 		configPath:             configPath,
 		nonMasqCIDRsFromConfig: map[string]netip.Prefix{},
 		nonMasqCIDRsInMap:      map[string]netip.Prefix{},
@@ -133,10 +132,10 @@ func newIPMasqAgent(logger *slog.Logger, configPath string, ipMasqMap IPMasqMap)
 // updates the BPF map accordingly.
 func (a *IPMasqAgent) Start() {
 	if err := a.restore(); err != nil {
-		a.logger.Warn("Failed to restore", logfields.Error, err)
+		log.WithError(err).Warn("Failed to restore")
 	}
 	if err := a.Update(); err != nil {
-		a.logger.Warn("Failed to update", logfields.Error, err)
+		log.WithError(err).Warn("Failed to update")
 	}
 
 	a.stop = make(chan struct{})
@@ -146,7 +145,7 @@ func (a *IPMasqAgent) Start() {
 		for {
 			select {
 			case event := <-a.watcher.Events:
-				a.logger.Debug("Received fsnotify event", logfields.Event, event)
+				log.Debugf("Received fsnotify event: %+v", event)
 
 				switch {
 				case event.Has(fsnotify.Create),
@@ -155,15 +154,15 @@ func (a *IPMasqAgent) Start() {
 					event.Has(fsnotify.Remove),
 					event.Has(fsnotify.Rename):
 					if err := a.Update(); err != nil {
-						a.logger.Warn("Failed to update", logfields.Error, err)
+						log.WithError(err).Warn("Failed to update")
 					}
 				default:
-					a.logger.Warn("Watcher received unknown event. Ignoring...", logfields.Event, event)
+					log.Warnf("Watcher received unknown event: %s. Ignoring.", event)
 				}
 			case err := <-a.watcher.Errors:
-				a.logger.Warn("Watcher received an error", logfields.Error, err)
+				log.WithError(err).Warn("Watcher received an error")
 			case <-a.stop:
-				a.logger.Info("Stopping ip-masq-agent")
+				log.Info("Stopping ip-masq-agent")
 				close(a.handlerFinished)
 				return
 			}
@@ -200,7 +199,7 @@ func (a *IPMasqAgent) Update() error {
 
 	for cidrStr, cidr := range a.nonMasqCIDRsFromConfig {
 		if _, ok := a.nonMasqCIDRsInMap[cidrStr]; !ok {
-			a.logger.Info("Adding CIDR", logfields.CIDR, cidrStr)
+			log.WithField(logfields.CIDR, cidrStr).Info("Adding CIDR")
 			a.ipMasqMap.Update(cidr)
 			a.nonMasqCIDRsInMap[cidrStr] = cidr
 		}
@@ -208,7 +207,7 @@ func (a *IPMasqAgent) Update() error {
 
 	for cidrStr, cidr := range a.nonMasqCIDRsInMap {
 		if _, ok := a.nonMasqCIDRsFromConfig[cidrStr]; !ok {
-			a.logger.Info("Removing CIDR", logfields.CIDR, cidrStr)
+			log.WithField(logfields.CIDR, cidrStr).Info("Removing CIDR")
 			a.ipMasqMap.Delete(cidr)
 			delete(a.nonMasqCIDRsInMap, cidrStr)
 		}
@@ -225,7 +224,7 @@ func (a *IPMasqAgent) readConfig() (bool, error) {
 	raw, err := os.ReadFile(a.configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			a.logger.Info("Config file not found", logfields.Path, a.configPath)
+			log.WithField(logfields.Path, a.configPath).Info("Config file not found")
 			a.nonMasqCIDRsFromConfig = map[string]netip.Prefix{}
 			a.masqLinkLocalIPv4 = false
 			a.masqLinkLocalIPv6 = false

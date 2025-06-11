@@ -15,6 +15,7 @@ import (
 	"github.com/cilium/hive/cell"
 	"github.com/cilium/hive/job"
 	"github.com/cilium/statedb"
+	"github.com/sirupsen/logrus"
 
 	"github.com/cilium/cilium/pkg/hive/health"
 	"github.com/cilium/cilium/pkg/hive/health/types"
@@ -34,6 +35,8 @@ var (
 )
 
 // New wraps the hive.New to create a hive with defaults used by cilium-agent.
+// pkg/hive should eventually go away and this code should live in e.g. daemon/cmd
+// or operator/cmd.
 func New(cells ...cell.Cell) *Hive {
 	cells = append(
 		slices.Clone(cells),
@@ -62,24 +65,16 @@ func New(cells ...cell.Cell) *Hive {
 			),
 		),
 
-		// The root slog FieldLogger.
+		// The root logrus FieldLogger.
 		cell.Provide(
-			func() logging.FieldLogger {
-				return logging.DefaultSlogLogger
-			},
-
-			// Root job group. This is mostly provided for tests so that we don't need a cell.Module
-			// wrapper to get a job.Group.
-			func(reg job.Registry, h cell.Health, l *slog.Logger, lc cell.Lifecycle) job.Group {
-				return reg.NewGroup(h, lc, job.WithLogger(l))
-			},
+			func() logrus.FieldLogger { return logging.DefaultLogger },
 		),
 	)
 
 	// Scope logging and health by module ID.
 	moduleDecorators := []cell.ModuleDecorator{
-		func(mid cell.ModuleID) logging.FieldLogger {
-			return logging.DefaultSlogLogger.With(logfields.LogSubsys, string(mid))
+		func(mid cell.ModuleID) logrus.FieldLogger {
+			return logging.DefaultLogger.WithField(logfields.LogSubsys, string(mid))
 		},
 		func(hp types.Provider, fmid cell.FullModuleID) cell.Health {
 			return hp.ForModule(fmid)
@@ -126,7 +121,9 @@ func AddConfigOverride[Cfg cell.Flagger](h *Hive, override func(*Cfg)) {
 
 // jobGroupProvider provides a (private) job group to modules, with scoped health reporting, logging and metrics.
 func jobGroupProvider(reg job.Registry, h cell.Health, l *slog.Logger, lc cell.Lifecycle, mid cell.ModuleID) job.Group {
-	return reg.NewGroup(h, lc,
+	g := reg.NewGroup(h,
 		job.WithLogger(l),
 		job.WithPprofLabels(pprof.Labels("cell", string(mid))))
+	lc.Append(g)
+	return g
 }

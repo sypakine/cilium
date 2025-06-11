@@ -1,6 +1,7 @@
 #! --cluster-id=1 --cluster-name=cluster1
 
 hive/start
+db/initialized
 
 # Create a service to which to add the external backends.
 k8s/add service.yaml endpointslice.yaml
@@ -54,7 +55,6 @@ Address            Type       ServiceName   Status  Backends
 {
   "name": "echo",
   "namespace": "test",
-  "includeExternal": true,
   "shared": true,
   "cluster": "cluster2",
   "clusterID": 2,
@@ -72,7 +72,6 @@ Address            Type       ServiceName   Status  Backends
 {
   "name": "echo",
   "namespace": "test",
-  "includeExternal": true,
   "shared": true,
   "cluster": "cluster3",
   "clusterID": 3,

@@ -19,6 +19,7 @@ import (
 
 	"github.com/cilium/cilium/api/v1/models"
 	cmtypes "github.com/cilium/cilium/pkg/clustermesh/types"
+	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/u8proto"
 )
 
@@ -63,20 +64,19 @@ const (
 type SVCForwardingMode string
 
 const (
-	SVCForwardingModeUndef = SVCForwardingMode("")
+	SVCForwardingModeUndef = SVCForwardingMode("undef")
 	SVCForwardingModeDSR   = SVCForwardingMode("dsr")
 	SVCForwardingModeSNAT  = SVCForwardingMode("snat")
 )
 
 func ToSVCForwardingMode(s string) SVCForwardingMode {
-	switch s {
-	case LBModeDSR:
+	if s == option.NodePortModeDSR {
 		return SVCForwardingModeDSR
-	case LBModeSNAT:
-		return SVCForwardingModeSNAT
-	default:
-		return SVCForwardingModeUndef
 	}
+	if s == option.NodePortModeSNAT {
+		return SVCForwardingModeSNAT
+	}
+	return SVCForwardingModeUndef
 }
 
 type SVCLoadBalancingAlgorithm uint8

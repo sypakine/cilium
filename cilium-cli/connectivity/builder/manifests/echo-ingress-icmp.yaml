@@ -11,8 +11,6 @@ spec:
   - fromEndpoints:
     - matchLabels:
         other: client
-      matchExpressions:
-      - { key: io.cilium.k8s.policy.cluster, operator: Exists }
     icmps:
     - fields:
       - family: IPv4

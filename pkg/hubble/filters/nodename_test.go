@@ -4,6 +4,7 @@
 package filters
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -135,7 +136,7 @@ func TestNodeFilter(t *testing.T) {
 					NodeName: tt.nodeName,
 				},
 			}
-			fl, err := BuildFilterList(t.Context(), ff, []OnBuildFilter{&NodeNameFilter{}})
+			fl, err := BuildFilterList(context.Background(), ff, []OnBuildFilter{&NodeNameFilter{}})
 			if tt.wantErr {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErrContains)

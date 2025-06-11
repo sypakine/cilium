@@ -43,7 +43,9 @@ func Test_Metrics(t *testing.T) {
 		),
 		cell.Provide(func(lc cell.Lifecycle, p types.Provider, jr job.Registry) job.Group {
 			h := p.ForModule(cell.FullModuleID{"test"})
-			return jr.NewGroup(h, lc)
+			jg := jr.NewGroup(h)
+			lc.Append(jg)
+			return jg
 		}),
 
 		cell.Module("health-metrics-test", "hive module health metrics test",

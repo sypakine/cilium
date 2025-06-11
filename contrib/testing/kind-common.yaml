@@ -1,9 +1,5 @@
 debug:
   enabled: true
-pprof:
-  enabled: true
-prometheus:
-  enabled: true
 operator:
   nodeSelector:
     kubernetes.io/os: linux

@@ -33,15 +33,13 @@ const (
 	GetPeerName6 = "cil_sock6_getpeername"
 	PostBind6    = "cil_sock6_post_bind"
 	PreBind6     = "cil_sock6_pre_bind"
-	SockRelease  = "cil_sock_release"
 )
 
 var (
 	cgroupProgs = []string{
 		Connect4, SendMsg4, RecvMsg4, GetPeerName4,
 		PostBind4, PreBind4, Connect6, SendMsg6,
-		RecvMsg6, GetPeerName6, PostBind6, PreBind6,
-		SockRelease}
+		RecvMsg6, GetPeerName6, PostBind6, PreBind6}
 )
 
 // TODO: Clean up bpffs root logic and make this a var.
@@ -126,8 +124,6 @@ func Enable(logger *slog.Logger, sysctl sysctl.Sysctl) error {
 			enabled[PreBind6] = true
 		}
 	}
-
-	enabled[SockRelease] = option.Config.EnableIPv4 || option.Config.EnableIPv6
 
 	for p, s := range enabled {
 		if s {

@@ -37,7 +37,6 @@ import (
 	"github.com/cilium/cilium/pkg/loadbalancer/healthserver"
 	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/maglev"
-	"github.com/cilium/cilium/pkg/metrics"
 	"github.com/cilium/cilium/pkg/node"
 	nodeTypes "github.com/cilium/cilium/pkg/node/types"
 	"github.com/cilium/cilium/pkg/option"
@@ -75,7 +74,6 @@ func TestScript(t *testing.T) {
 				client.FakeClientCell,
 				daemonk8s.ResourcesCell,
 				daemonk8s.TablesCell,
-				metrics.Cell,
 
 				lbcell.Cell,
 

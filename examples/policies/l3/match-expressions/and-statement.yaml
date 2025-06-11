@@ -8,10 +8,10 @@ spec:
   - fromEndpoints:
     - matchExpressions:
       - key: "k8s:io.kubernetes.pod.namespace"
-        operator: "In"
+        operator: "in"
         values:
         - "production"
       - key: "k8s:cilium.example.com/policy"
-        operator: "In"
+        operator: "in"
         values:
         - "strict"

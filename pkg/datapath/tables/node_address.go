@@ -209,7 +209,7 @@ type nodeAddressControllerParams struct {
 	Log             *slog.Logger
 	Config          NodeAddressConfig
 	Lifecycle       cell.Lifecycle
-	Jobs            job.Group
+	Jobs            job.Registry
 	DB              *statedb.DB
 	Devices         statedb.Table[*Device]
 	NodeAddresses   statedb.RWTable[NodeAddress]
@@ -241,6 +241,9 @@ func newNodeAddressController(p nodeAddressControllerParams) (tbl statedb.Table[
 }
 
 func (n *nodeAddressController) register() {
+	g := n.Jobs.NewGroup(n.Health)
+	g.Add(job.OneShot("node-address-update", n.run))
+
 	n.Lifecycle.Append(
 		cell.Hook{
 			OnStart: func(ctx cell.HookContext) error {
@@ -265,11 +268,11 @@ func (n *nodeAddressController) register() {
 				}
 				txn.Commit()
 
-				// Start a job in the background to incremental refresh
+				// Start the job in the background to incremental refresh
 				// the node addresses.
-				n.Jobs.Add(job.OneShot("node-address-update", n.run))
-				return nil
+				return g.Start(ctx)
 			},
+			OnStop: g.Stop,
 		})
 
 }

@@ -992,25 +992,25 @@ func Test_backupFiles(t *testing.T) {
 
 func Test_parseEventBufferTupleString(t *testing.T) {
 	assert := assert.New(t)
-	c, err := ParseEventBufferTupleString("enabled_123_1h")
+	c, err := ParseEventBufferTupleString("enabled,123,1h")
 	assert.NoError(err)
 	assert.True(c.Enabled)
 	assert.Equal(123, c.MaxSize)
 	assert.Equal(time.Hour, c.TTL)
 
-	c, err = ParseEventBufferTupleString("disabled_123_1h")
+	c, err = ParseEventBufferTupleString("disabled,123,1h")
 	assert.NoError(err)
 	assert.False(c.Enabled)
 	assert.Equal(123, c.MaxSize)
 	assert.Equal(time.Hour, c.TTL)
 
-	c, err = ParseEventBufferTupleString("cat_123_1h")
+	c, err = ParseEventBufferTupleString("cat,123,1h")
 	assert.Error(err)
 
-	c, err = ParseEventBufferTupleString("enabled_xxx_1h")
+	c, err = ParseEventBufferTupleString("enabled,xxx,1h")
 	assert.Error(err)
 
-	c, err = ParseEventBufferTupleString("enabled_123_x")
+	c, err = ParseEventBufferTupleString("enabled,123,x")
 	assert.Error(err)
 }
 

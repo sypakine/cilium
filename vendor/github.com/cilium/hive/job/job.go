@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/pprof"
+	"slices"
 	"sync"
 
 	"github.com/cilium/hive"
@@ -34,7 +35,7 @@ type Registry interface {
 	// NewGroup creates a new group of jobs which can be started and stopped together as part of the cells lifecycle.
 	// The provided scope is used to report health status of the jobs. A `cell.Scope` can be obtained via injection
 	// an object with the correct scope is provided by the closest `cell.Module`.
-	NewGroup(health cell.Health, lc cell.Lifecycle, opts ...groupOpt) Group
+	NewGroup(health cell.Health, opts ...groupOpt) Group
 }
 
 type registry struct {
@@ -57,10 +58,7 @@ func newRegistry(
 
 // NewGroup creates a new Group with the given `opts` options, which allows you to customize the behavior for the
 // group as a whole. For example by allowing you to add pprof labels to the group or by customizing the logger.
-//
-// Jobs added to the group before it is started will be appended to the provided lifecycle. Jobs added
-// after starting are started immediately.
-func (c *registry) NewGroup(health cell.Health, lc cell.Lifecycle, opts ...groupOpt) Group {
+func (c *registry) NewGroup(health cell.Health, opts ...groupOpt) Group {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -73,24 +71,19 @@ func (c *registry) NewGroup(health cell.Health, lc cell.Lifecycle, opts ...group
 	}
 
 	g := &group{
-		options:   options,
-		lifecycle: lc,
-		wg:        &sync.WaitGroup{},
-		health:    health,
+		options: options,
+		wg:      &sync.WaitGroup{},
+		health:  health,
 	}
-	// Append the lifecycle hooks for the group. The start hook sets up a context
-	// for the dynamical jobs (jobs added after starting) and a stop hook to cancel
-	// the context and wait for the jobs to finish.
-	lc.Append((*groupHooks)(g))
 
 	c.groups = append(c.groups, g)
 
 	return g
 }
 
-// Group aims to streamline the management of work within a cell.
-// A group allows you to add multiple types of jobs with different kinds of logic.
-// No matter the job type, the function provided to is always called with a context which
+// Group aims to streamline the management of work within a cell. Group implements cell.HookInterface and takes care
+// of proper start and stop behavior as expected by hive. A group allows you to add multiple types of jobs which
+// different kinds of logic. No matter the job type, the function provided to is always called with a context which
 // is bound to the lifecycle of the cell.
 type Group interface {
 	// Add append the job. If the group has not yet been started the job is queued, otherwise it is started
@@ -99,6 +92,9 @@ type Group interface {
 
 	// Scoped creates a scoped group, jobs added to this scoped group will appear as a sub-scope in the health reporter
 	Scoped(name string) ScopedGroup
+
+	// HookInterface is implemented to Start and Stop the jobs in the group.
+	cell.HookInterface
 }
 
 // Job in an interface that describes a unit of work which can be added to a Group. This interface contains unexported
@@ -108,55 +104,19 @@ type Job interface {
 }
 
 type queuedJob struct {
-	job     Job
-	health  cell.Health
-	options options
-
-	wq     sync.WaitGroup
-	cancel context.CancelFunc
+	job    Job
+	health cell.Health
 }
-
-// Start implements cell.HookInterface.
-func (qj *queuedJob) Start(cell.HookContext) error {
-	qj.wq.Add(1)
-
-	var ctx context.Context
-	ctx, qj.cancel = context.WithCancel(context.Background())
-	pprof.Do(ctx, qj.options.pprofLabels, func(ctx context.Context) {
-		go qj.job.start(ctx, &qj.wq, qj.health, qj.options)
-	})
-	return nil
-}
-
-// Stop implements cell.HookInterface.
-func (qj *queuedJob) Stop(ctx cell.HookContext) error {
-	qj.cancel()
-
-	stopped := make(chan struct{})
-	go func() {
-		qj.wq.Wait()
-		close(stopped)
-	}()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-stopped:
-		return nil
-	}
-}
-
-var _ cell.HookInterface = &queuedJob{}
 
 type group struct {
-	options   options
-	lifecycle cell.Lifecycle
+	options options
 
-	// wg is a wait group for "dynamic" jobs added after starting.
 	wg *sync.WaitGroup
 
-	mu     sync.Mutex
-	ctx    context.Context
-	cancel context.CancelFunc
+	mu         sync.Mutex
+	ctx        context.Context
+	cancel     context.CancelFunc
+	queuedJobs []queuedJob
 
 	health cell.Health
 }
@@ -192,30 +152,32 @@ func WithMetrics(metrics Metrics) groupOpt {
 	}
 }
 
-var _ cell.HookInterface = (*groupHooks)(nil)
-
-// groupHooks implements the Hive start and stop hooks. Hidden as these
-// are appended by NewGroup.
-type groupHooks group
+var _ cell.HookInterface = (*group)(nil)
 
 // Start implements the cell.HookInterface interface
-func (gh *groupHooks) Start(_ cell.HookContext) error {
-	jg := (*group)(gh)
+func (jg *group) Start(_ cell.HookContext) error {
 	jg.mu.Lock()
 	defer jg.mu.Unlock()
 
-	// Create a context for the dynamically started jobs.
 	jg.ctx, jg.cancel = context.WithCancel(context.Background())
+
+	jg.wg.Add(len(jg.queuedJobs))
+	for _, queuedJob := range jg.queuedJobs {
+		pprof.Do(jg.ctx, jg.options.pprofLabels, func(ctx context.Context) {
+			go queuedJob.job.start(ctx, jg.wg, queuedJob.health, jg.options)
+		})
+	}
+	// Nil the queue once we start so it can be GC'ed
+	jg.queuedJobs = nil
+
 	return nil
 }
 
 // Stop implements the cell.HookInterface interface
-func (gh *groupHooks) Stop(stopCtx cell.HookContext) error {
-	jg := (*group)(gh)
+func (jg *group) Stop(stopCtx cell.HookContext) error {
 	jg.mu.Lock()
 	defer jg.mu.Unlock()
 
-	// Stop all dynamically started jobs.
 	done := make(chan struct{})
 	go func() {
 		jg.wg.Wait()
@@ -241,17 +203,13 @@ func (jg *group) add(health cell.Health, jobs ...Job) {
 	jg.mu.Lock()
 	defer jg.mu.Unlock()
 
-	// The context is only set once the group has been started.
-	// If we have not yet started append hooks for the jobs to be started as part
-	// of the normal lifecycle. This makes sure that the start order reflects the
-	// order in which the jobs are added and avoids e.g. starting a job before its
-	// dependencies.
+	// The context is only set once the group has been started. If we have not yet started, queue the jobs.
 	if jg.ctx == nil {
+		jg.queuedJobs = slices.Grow(jg.queuedJobs, len(jobs))
 		for _, job := range jobs {
-			jg.lifecycle.Append(&queuedJob{
-				job:     job,
-				health:  health,
-				options: jg.options,
+			jg.queuedJobs = append(jg.queuedJobs, queuedJob{
+				job:    job,
+				health: health,
 			})
 		}
 		return

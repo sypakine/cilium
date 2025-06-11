@@ -293,7 +293,7 @@ func isSubnetAtPrefixCapacity(err error) bool {
 	return false
 }
 
-// AllocateIPs performs the ENI allocation operation
+// AllocateIPs performs the ENI allocation oepration
 func (n *Node) AllocateIPs(ctx context.Context, a *ipam.AllocationAction) error {
 	// Check if the interface to allocate on is prefix delegated
 	n.mutex.RLock()
@@ -789,8 +789,8 @@ func (n *Node) IsPrefixDelegated() bool {
 	if !limitsAvailable {
 		return false
 	}
-	// Allocating prefixes is supported only on nitro and bare metal instances
-	if limits.HypervisorType != "nitro" && !limits.IsBareMetal {
+	// Allocating prefixes is supported only on nitro instances
+	if limits.HypervisorType != "nitro" {
 		return false
 	}
 	// Check if this node is allowed to use prefix delegation

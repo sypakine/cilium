@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	"os"
 	"os/exec"
@@ -23,6 +22,7 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/rlimit"
 	"github.com/cilium/hive/hivetest"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 
 	"github.com/cilium/cilium/pkg/bpf"
@@ -106,7 +106,7 @@ func TestVerifier(t *testing.T) {
 	flag.Parse()
 
 	logger := hivetest.Logger(t)
-	logging.SetLogLevel(slog.LevelDebug)
+	logging.DefaultLogger.SetLevel(logrus.DebugLevel)
 
 	if ciliumBasePath == nil || *ciliumBasePath == "" {
 		t.Skip("Please set -cilium-base-path to run verifier tests")

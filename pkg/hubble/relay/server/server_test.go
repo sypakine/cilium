@@ -169,7 +169,7 @@ func newHubblePeer(t testing.TB, ctx context.Context, address string, hubbleObse
 func benchmarkRelayGetFlows(b *testing.B, withFieldMask bool) {
 	tmp := b.TempDir()
 	root := "unix://" + filepath.Join(tmp, "peer-")
-	ctx := b.Context()
+	ctx := context.Background()
 	numFlows := b.N
 	numPeers := 2
 

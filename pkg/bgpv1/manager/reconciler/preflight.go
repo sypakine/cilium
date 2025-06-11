@@ -62,6 +62,7 @@ func (r *PreflightReconciler) Cleanup(_ *instance.ServerWithConfig) {}
 func (r *PreflightReconciler) Reconcile(ctx context.Context, p ReconcileParams) error {
 	var (
 		l = r.logger.With(
+			types.ComponentLogField, "PreflightReconciler",
 			types.LocalASNLogField, p.DesiredConfig.LocalASN,
 		)
 	)
@@ -141,7 +142,7 @@ func (r *PreflightReconciler) Reconcile(ctx context.Context, p ReconcileParams) 
 	}
 
 	// stop the old BgpServer
-	p.CurrentServer.Server.Stop(ctx, types.StopRequest{FullDestroy: true})
+	p.CurrentServer.Server.Stop()
 
 	// create a new one via ServerWithConfig constructor
 	s, err := instance.NewServerWithConfig(ctx, r.logger, globalConfig)

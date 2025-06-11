@@ -14,7 +14,6 @@ import (
 	"github.com/cilium/cilium/pkg/bpf"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/maps/timestamp"
-	"github.com/cilium/cilium/pkg/metrics"
 	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/tuple"
 )
@@ -86,7 +85,7 @@ type RetriesMap interface {
 }
 
 // NewMap instantiates a Map.
-func NewMap(registry *metrics.Registry, name string, family IPFamily, entries int) *Map {
+func NewMap(name string, family IPFamily, entries int) *Map {
 	var mapKey bpf.MapKey
 	var mapValue bpf.MapValue
 
@@ -108,7 +107,7 @@ func NewMap(registry *metrics.Registry, name string, family IPFamily, entries in
 			0,
 		).WithCache().
 			WithEvents(option.Config.GetEventBufferConfig(name)).
-			WithPressureMetric(registry),
+			WithPressureMetric(),
 		family: family,
 	}
 }
@@ -388,15 +387,15 @@ func DeleteSwappedMapping6(m *Map, tk tuple.TupleKey) error {
 }
 
 // GlobalMaps returns all global NAT maps.
-func GlobalMaps(registry *metrics.Registry, ipv4, ipv6, nodeport bool) (ipv4Map, ipv6Map *Map) {
+func GlobalMaps(ipv4, ipv6, nodeport bool) (ipv4Map, ipv6Map *Map) {
 	if !nodeport {
 		return
 	}
 	if ipv4 {
-		ipv4Map = NewMap(registry, MapNameSnat4Global, IPv4, maxEntries())
+		ipv4Map = NewMap(MapNameSnat4Global, IPv4, maxEntries())
 	}
 	if ipv6 {
-		ipv6Map = NewMap(registry, MapNameSnat6Global, IPv6, maxEntries())
+		ipv6Map = NewMap(MapNameSnat6Global, IPv6, maxEntries())
 	}
 	return
 }

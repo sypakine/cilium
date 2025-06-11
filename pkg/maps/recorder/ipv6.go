@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/cilium/cilium/pkg/bpf"
 	"github.com/cilium/cilium/pkg/byteorder"
 	"github.com/cilium/cilium/pkg/ebpf"
@@ -91,7 +89,7 @@ func CaptureMap6() *Map {
 				&CaptureWcard6{},
 				&CaptureRule6{},
 				MapSize,
-				unix.BPF_F_NO_PREALLOC,
+				bpf.BPF_F_NO_PREALLOC,
 			).WithCache().WithEvents(option.Config.GetEventBufferConfig(MapNameWcard6)),
 			v4: false,
 		}

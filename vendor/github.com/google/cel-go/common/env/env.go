@@ -115,9 +115,7 @@ func (c *Config) AddVariableDecls(vars ...*decls.VariableDecl) *Config {
 		if v == nil {
 			continue
 		}
-		cv := NewVariable(v.Name(), SerializeTypeDesc(v.Type()))
-		cv.Description = v.Description()
-		convVars[i] = cv
+		convVars[i] = NewVariable(v.Name(), serializeTypeDesc(v.Type()))
 	}
 	return c.AddVariables(convVars...)
 }
@@ -148,24 +146,16 @@ func (c *Config) AddFunctionDecls(funcs ...*decls.FunctionDecl) *Config {
 			overloadID := o.ID()
 			args := make([]*TypeDesc, 0, len(o.ArgTypes()))
 			for _, a := range o.ArgTypes() {
-				args = append(args, SerializeTypeDesc(a))
+				args = append(args, serializeTypeDesc(a))
 			}
-			ret := SerializeTypeDesc(o.ResultType())
-			var overload *Overload
+			ret := serializeTypeDesc(o.ResultType())
 			if o.IsMemberFunction() {
-				overload = NewMemberOverload(overloadID, args[0], args[1:], ret)
+				overloads = append(overloads, NewMemberOverload(overloadID, args[0], args[1:], ret))
 			} else {
-				overload = NewOverload(overloadID, args, ret)
+				overloads = append(overloads, NewOverload(overloadID, args, ret))
 			}
-			exampleCount := len(o.Examples())
-			if exampleCount > 0 {
-				overload.Examples = o.Examples()
-			}
-			overloads = append(overloads, overload)
 		}
-		cf := NewFunction(fn.Name(), overloads...)
-		cf.Description = fn.Description()
-		convFuncs[i] = cf
+		convFuncs[i] = NewFunction(fn.Name(), overloads...)
 	}
 	return c.AddFunctions(convFuncs...)
 }
@@ -230,12 +220,7 @@ func (imp *Import) Validate() error {
 
 // NewVariable returns a serializable variable from a name and type definition
 func NewVariable(name string, t *TypeDesc) *Variable {
-	return NewVariableWithDoc(name, t, "")
-}
-
-// NewVariableWithDoc returns a serializable variable from a name, type definition, and doc string.
-func NewVariableWithDoc(name string, t *TypeDesc, doc string) *Variable {
-	return &Variable{Name: name, TypeDesc: t, Description: doc}
+	return &Variable{Name: name, TypeDesc: t}
 }
 
 // Variable represents a typed variable declaration which will be published via the
@@ -293,7 +278,7 @@ func (v *Variable) AsCELVariable(tp types.Provider) (*decls.VariableDecl, error)
 	if err != nil {
 		return nil, fmt.Errorf("invalid variable %q: %w", v.Name, err)
 	}
-	return decls.NewVariableWithDoc(v.Name, t, v.Description), nil
+	return decls.NewVariable(v.Name, t), nil
 }
 
 // NewContextVariable returns a serializable context variable with a specific type name.
@@ -323,11 +308,6 @@ func (ctx *ContextVariable) Validate() error {
 // NewFunction creates a serializable function and overload set.
 func NewFunction(name string, overloads ...*Overload) *Function {
 	return &Function{Name: name, Overloads: overloads}
-}
-
-// NewFunctionWithDoc creates a serializable function and overload set.
-func NewFunctionWithDoc(name, doc string, overloads ...*Overload) *Function {
-	return &Function{Name: name, Description: doc, Overloads: overloads}
 }
 
 // Function represents the serializable format of a function and its overloads.
@@ -362,37 +342,34 @@ func (fn *Function) AsCELFunction(tp types.Provider) (*decls.FunctionDecl, error
 	if err := fn.Validate(); err != nil {
 		return nil, err
 	}
-	opts := make([]decls.FunctionOpt, 0, len(fn.Overloads)+1)
-	for _, o := range fn.Overloads {
-		opt, err := o.AsFunctionOption(tp)
-		opts = append(opts, opt)
+	var err error
+	overloads := make([]decls.FunctionOpt, len(fn.Overloads))
+	for i, o := range fn.Overloads {
+		overloads[i], err = o.AsFunctionOption(tp)
 		if err != nil {
 			return nil, fmt.Errorf("invalid function %q: %w", fn.Name, err)
 		}
 	}
-	if len(fn.Description) != 0 {
-		opts = append(opts, decls.FunctionDocs(fn.Description))
-	}
-	return decls.NewFunction(fn.Name, opts...)
+	return decls.NewFunction(fn.Name, overloads...)
 }
 
 // NewOverload returns a new serializable representation of a global overload.
-func NewOverload(id string, args []*TypeDesc, ret *TypeDesc, examples ...string) *Overload {
-	return &Overload{ID: id, Args: args, Return: ret, Examples: examples}
+func NewOverload(id string, args []*TypeDesc, ret *TypeDesc) *Overload {
+	return &Overload{ID: id, Args: args, Return: ret}
 }
 
 // NewMemberOverload returns a new serializable representation of a member (receiver) overload.
-func NewMemberOverload(id string, target *TypeDesc, args []*TypeDesc, ret *TypeDesc, examples ...string) *Overload {
-	return &Overload{ID: id, Target: target, Args: args, Return: ret, Examples: examples}
+func NewMemberOverload(id string, target *TypeDesc, args []*TypeDesc, ret *TypeDesc) *Overload {
+	return &Overload{ID: id, Target: target, Args: args, Return: ret}
 }
 
 // Overload represents the serializable format of a function overload.
 type Overload struct {
-	ID       string      `yaml:"id"`
-	Examples []string    `yaml:"examples,omitempty"`
-	Target   *TypeDesc   `yaml:"target,omitempty"`
-	Args     []*TypeDesc `yaml:"args,omitempty"`
-	Return   *TypeDesc   `yaml:"return,omitempty"`
+	ID          string      `yaml:"id"`
+	Description string      `yaml:"description,omitempty"`
+	Target      *TypeDesc   `yaml:"target,omitempty"`
+	Args        []*TypeDesc `yaml:"args,omitempty"`
+	Return      *TypeDesc   `yaml:"return,omitempty"`
 }
 
 // Validate validates the overload configuration is well-formed.
@@ -449,7 +426,7 @@ func (od *Overload) AsFunctionOption(tp types.Provider) (decls.FunctionOpt, erro
 	if len(errs) != 0 {
 		return nil, errors.Join(errs...)
 	}
-	return decls.Overload(od.ID, args, result, decls.OverloadExamples(od.Examples...)), nil
+	return decls.Overload(od.ID, args, result), nil
 }
 
 // NewExtension creates a serializable Extension from a name and version string.
@@ -859,8 +836,7 @@ func (td *TypeDesc) AsCELType(tp types.Provider) (*types.Type, error) {
 	}
 }
 
-// SerializeTypeDesc converts a CEL native *types.Type to a serializable TypeDesc.
-func SerializeTypeDesc(t *types.Type) *TypeDesc {
+func serializeTypeDesc(t *types.Type) *TypeDesc {
 	typeName := t.TypeName()
 	if t.Kind() == types.TypeParamKind {
 		return NewTypeParam(typeName)
@@ -872,7 +848,7 @@ func SerializeTypeDesc(t *types.Type) *TypeDesc {
 	}
 	var params []*TypeDesc
 	for _, p := range t.Parameters() {
-		params = append(params, SerializeTypeDesc(p))
+		params = append(params, serializeTypeDesc(p))
 	}
 	return NewTypeDesc(typeName, params...)
 }

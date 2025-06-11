@@ -4,6 +4,7 @@
 package http
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -37,7 +38,7 @@ func Test_httpHandler_Status(t *testing.T) {
 }
 
 func Test_httpHandler_ProcessFlow(t *testing.T) {
-	ctx := t.Context()
+	ctx := context.TODO()
 	plugin := httpPlugin{}
 	handler := plugin.NewHandler()
 	options := &api.MetricConfig{
@@ -115,7 +116,7 @@ func Test_httpHandler_ProcessFlow(t *testing.T) {
 }
 
 func Test_httpHandlerV2_ProcessFlow(t *testing.T) {
-	ctx := t.Context()
+	ctx := context.TODO()
 	plugin := httpV2Plugin{}
 	handler := plugin.NewHandler()
 	options := &api.MetricConfig{

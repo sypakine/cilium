@@ -112,7 +112,10 @@ func (r *Range) Allocate(ip net.IP) error {
 		return &ErrNotInRange{r.net.String()}
 	}
 
-	allocated := r.alloc.Allocate(offset)
+	allocated, err := r.alloc.Allocate(offset)
+	if err != nil {
+		return err
+	}
 	if !allocated {
 		return ErrAllocated
 	}
@@ -122,7 +125,10 @@ func (r *Range) Allocate(ip net.IP) error {
 // AllocateNext reserves one of the IPs from the pool. ErrFull may
 // be returned if there are no addresses left.
 func (r *Range) AllocateNext() (net.IP, error) {
-	offset, ok := r.alloc.AllocateNext()
+	offset, ok, err := r.alloc.AllocateNext()
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, ErrFull
 	}

@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/cilium/cilium/pkg/labels"
 )
@@ -63,14 +64,14 @@ type Rule struct {
 	// are mutually exclusive.
 	//
 	// +kubebuilder:validation:OneOf
-	EndpointSelector EndpointSelector `json:"endpointSelector,omitzero"`
+	EndpointSelector EndpointSelector `json:"endpointSelector,omitempty"`
 
 	// NodeSelector selects all nodes which should be subject to this rule.
 	// EndpointSelector and NodeSelector cannot be both empty and are mutually
 	// exclusive. Can only be used in CiliumClusterwideNetworkPolicies.
 	//
 	// +kubebuilder:validation:OneOf
-	NodeSelector EndpointSelector `json:"nodeSelector,omitzero"`
+	NodeSelector EndpointSelector `json:"nodeSelector,omitempty"`
 
 	// Ingress is a list of IngressRule which are enforced at ingress.
 	// If omitted or empty, this rule does not apply at ingress.
@@ -125,7 +126,7 @@ type Rule struct {
 	// cause endpoints to enter default-deny mode.
 	//
 	// +kubebuilder:validation:Optional
-	EnableDefaultDeny DefaultDenyConfig `json:"enableDefaultDeny,omitzero"`
+	EnableDefaultDeny DefaultDenyConfig `json:"enableDefaultDeny,omitempty"`
 
 	// Description is a free form string, it can be used by the creator of
 	// the rule to store human readable explanation of the purpose of this
@@ -133,6 +134,53 @@ type Rule struct {
 	//
 	// +kubebuilder:validation:Optional
 	Description string `json:"description,omitempty"`
+}
+
+// MarshalJSON returns the JSON encoding of Rule r. We need to overwrite it to
+// enforce omitempty on the EndpointSelector nested structures.
+func (r *Rule) MarshalJSON() ([]byte, error) {
+	type common struct {
+		Ingress           []IngressRule     `json:"ingress,omitempty"`
+		IngressDeny       []IngressDenyRule `json:"ingressDeny,omitempty"`
+		Egress            []EgressRule      `json:"egress,omitempty"`
+		EgressDeny        []EgressDenyRule  `json:"egressDeny,omitempty"`
+		Labels            labels.LabelArray `json:"labels,omitempty"`
+		EnableDefaultDeny DefaultDenyConfig `json:"enableDefaultDeny,omitzero"`
+		Description       string            `json:"description,omitempty"`
+	}
+
+	var a any
+	ruleCommon := common{
+		Ingress:           r.Ingress,
+		IngressDeny:       r.IngressDeny,
+		Egress:            r.Egress,
+		EgressDeny:        r.EgressDeny,
+		Labels:            r.Labels,
+		EnableDefaultDeny: r.EnableDefaultDeny,
+		Description:       r.Description,
+	}
+
+	// Only one of endpointSelector or nodeSelector is permitted.
+	switch {
+	case r.EndpointSelector.LabelSelector != nil:
+		a = struct {
+			EndpointSelector EndpointSelector `json:"endpointSelector,omitempty"`
+			common
+		}{
+			EndpointSelector: r.EndpointSelector,
+			common:           ruleCommon,
+		}
+	case r.NodeSelector.LabelSelector != nil:
+		a = struct {
+			NodeSelector EndpointSelector `json:"nodeSelector,omitempty"`
+			common
+		}{
+			NodeSelector: r.NodeSelector,
+			common:       ruleCommon,
+		}
+	}
+
+	return json.Marshal(a)
 }
 
 func (r *Rule) DeepEqual(o *Rule) bool {

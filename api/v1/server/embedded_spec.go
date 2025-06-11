@@ -3286,30 +3286,26 @@ func init() {
         }
       }
     },
-    "HubbleMetricsStatus": {
-      "description": "Status of the Hubble metrics server\n\n+k8s:deepcopy-gen=true",
-      "type": "object",
-      "properties": {
-        "msg": {
-          "description": "Human readable status/error/warning message",
-          "type": "string"
-        },
-        "state": {
-          "description": "State the component is in",
-          "type": "string",
-          "enum": [
-            "Ok",
-            "Warning",
-            "Failure",
-            "Disabled"
-          ]
-        }
-      }
-    },
     "HubbleStatus": {
       "description": "Status of the Hubble server\n\n+k8s:deepcopy-gen=true",
       "type": "object",
       "properties": {
+        "metrics": {
+          "description": "Status of the Hubble metrics server",
+          "type": "object",
+          "properties": {
+            "state": {
+              "description": "State of the Hubble metrics",
+              "type": "string",
+              "enum": [
+                "Ok",
+                "Warning",
+                "Failure",
+                "Disabled"
+              ]
+            }
+          }
+        },
         "msg": {
           "description": "Human readable status/error/warning message",
           "type": "string"
@@ -5026,10 +5022,6 @@ func init() {
         "hubble": {
           "description": "Status of Hubble server",
           "$ref": "#/definitions/HubbleStatus"
-        },
-        "hubble-metrics": {
-          "description": "Status of Hubble metrics server",
-          "$ref": "#/definitions/HubbleMetricsStatus"
         },
         "identity-range": {
           "description": "Status of identity range of the cluster",
@@ -8994,30 +8986,26 @@ func init() {
         }
       }
     },
-    "HubbleMetricsStatus": {
-      "description": "Status of the Hubble metrics server\n\n+k8s:deepcopy-gen=true",
-      "type": "object",
-      "properties": {
-        "msg": {
-          "description": "Human readable status/error/warning message",
-          "type": "string"
-        },
-        "state": {
-          "description": "State the component is in",
-          "type": "string",
-          "enum": [
-            "Ok",
-            "Warning",
-            "Failure",
-            "Disabled"
-          ]
-        }
-      }
-    },
     "HubbleStatus": {
       "description": "Status of the Hubble server\n\n+k8s:deepcopy-gen=true",
       "type": "object",
       "properties": {
+        "metrics": {
+          "description": "Status of the Hubble metrics server",
+          "type": "object",
+          "properties": {
+            "state": {
+              "description": "State of the Hubble metrics",
+              "type": "string",
+              "enum": [
+                "Ok",
+                "Warning",
+                "Failure",
+                "Disabled"
+              ]
+            }
+          }
+        },
         "msg": {
           "description": "Human readable status/error/warning message",
           "type": "string"
@@ -9047,6 +9035,22 @@ func init() {
         },
         "state": {
           "description": "State the component is in",
+          "type": "string",
+          "enum": [
+            "Ok",
+            "Warning",
+            "Failure",
+            "Disabled"
+          ]
+        }
+      }
+    },
+    "HubbleStatusMetrics": {
+      "description": "Status of the Hubble metrics server",
+      "type": "object",
+      "properties": {
+        "state": {
+          "description": "State of the Hubble metrics",
           "type": "string",
           "enum": [
             "Ok",
@@ -11171,10 +11175,6 @@ func init() {
         "hubble": {
           "description": "Status of Hubble server",
           "$ref": "#/definitions/HubbleStatus"
-        },
-        "hubble-metrics": {
-          "description": "Status of Hubble metrics server",
-          "$ref": "#/definitions/HubbleMetricsStatus"
         },
         "identity-range": {
           "description": "Status of identity range of the cluster",

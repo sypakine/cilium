@@ -71,19 +71,15 @@ func addPolicy(tb testing.TB, policies fakeResource[*Policy], params *policyPara
 	})
 }
 
-type policyGatewayParams struct {
-	nodeLabels map[string]string
-	iface      string
-	egressIP   string
-}
-
 type policyParams struct {
 	name             string
 	endpointLabels   map[string]string
 	nodeSelectors    map[string]string
 	destinationCIDRs []string
 	excludedCIDRs    []string
-	policyGwParams   []policyGatewayParams
+	nodeLabels       map[string]string
+	iface            string
+	egressIP         string
 }
 
 func newCEGP(params *policyParams) (*v2.CiliumEgressGatewayPolicy, *PolicyConfig) {
@@ -99,6 +95,7 @@ func newCEGP(params *policyParams) (*v2.CiliumEgressGatewayPolicy, *PolicyConfig
 		parsedExcludedCIDRs = append(parsedExcludedCIDRs, parsedExcludedCIDR)
 	}
 
+	addr, _ := netip.ParseAddr(params.egressIP)
 	policy := &PolicyConfig{
 		id: types.NamespacedName{
 			Name: params.name,
@@ -112,21 +109,10 @@ func newCEGP(params *policyParams) (*v2.CiliumEgressGatewayPolicy, *PolicyConfig
 				},
 			},
 		},
-	}
-	for _, gwParams := range params.policyGwParams {
-		addr, _ := netip.ParseAddr(gwParams.egressIP)
-		pwc := policyGatewayConfig{
-			iface:    gwParams.iface,
+		policyGwConfig: &policyGatewayConfig{
+			iface:    params.iface,
 			egressIP: addr,
-		}
-		if len(gwParams.nodeLabels) != 0 {
-			pwc.nodeSelector = api.EndpointSelector{
-				LabelSelector: &slimv1.LabelSelector{
-					MatchLabels: gwParams.nodeLabels,
-				},
-			}
-		}
-		policy.policyGwConfigs = append(policy.policyGwConfigs, pwc)
+		},
 	}
 	if len(params.nodeSelectors) != 0 {
 		policy.nodeSelectors = []api.EndpointSelector{
@@ -143,6 +129,14 @@ func newCEGP(params *policyParams) (*v2.CiliumEgressGatewayPolicy, *PolicyConfig
 				LabelSelector: &slimv1.LabelSelector{
 					MatchLabels: params.endpointLabels,
 				},
+			},
+		}
+	}
+
+	if len(params.nodeLabels) != 0 {
+		policy.policyGwConfig.nodeSelector = api.EndpointSelector{
+			LabelSelector: &slimv1.LabelSelector{
+				MatchLabels: params.nodeLabels,
 			},
 		}
 	}
@@ -175,27 +169,12 @@ func newCEGP(params *policyParams) (*v2.CiliumEgressGatewayPolicy, *PolicyConfig
 			ExcludedCIDRs:    excludedCIDRs,
 			EgressGateway: &v2.EgressGateway{
 				NodeSelector: &slimv1.LabelSelector{
-					MatchLabels: params.policyGwParams[0].nodeLabels,
+					MatchLabels: params.nodeLabels,
 				},
-				Interface: params.policyGwParams[0].iface,
-				EgressIP:  params.policyGwParams[0].egressIP,
+				Interface: params.iface,
+				EgressIP:  params.egressIP,
 			},
 		},
-	}
-
-	// Only populate the list if there is more than one gateway.
-	if len(params.policyGwParams) > 1 {
-		// EgressGateways contains all the gateways.
-		for _, gwParams := range params.policyGwParams {
-			gateway := v2.EgressGateway{
-				NodeSelector: &slimv1.LabelSelector{
-					MatchLabels: gwParams.nodeLabels,
-				},
-				Interface: gwParams.iface,
-				EgressIP:  gwParams.egressIP,
-			}
-			cegp.Spec.EgressGateways = append(cegp.Spec.EgressGateways, gateway)
-		}
 	}
 
 	if len(params.nodeSelectors) != 0 {

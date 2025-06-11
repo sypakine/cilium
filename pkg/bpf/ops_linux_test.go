@@ -8,6 +8,7 @@ import (
 	"encoding"
 	"errors"
 	"iter"
+	"log/slog"
 	"testing"
 
 	"github.com/cilium/ebpf"
@@ -18,9 +19,9 @@ import (
 	"github.com/cilium/statedb/reconciler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sys/unix"
 
 	"github.com/cilium/cilium/pkg/hive"
+	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/testutils"
 	"github.com/cilium/cilium/pkg/time"
 )
@@ -49,7 +50,7 @@ func Test_MapOps(t *testing.T) {
 		&TestKey{},
 		&TestValue{},
 		maxEntries,
-		unix.BPF_F_NO_PREALLOC,
+		BPF_F_NO_PREALLOC,
 	)
 
 	err := testMap.OpenOrCreate()
@@ -61,17 +62,17 @@ func Test_MapOps(t *testing.T) {
 	obj := &TestObject{Key: TestKey{1}, Value: TestValue{2}}
 
 	// Test Update() and Delete()
-	err = ops.Update(ctx, nil, 0, obj)
+	err = ops.Update(ctx, nil, obj)
 	assert.NoError(t, err, "Update")
 
-	err = ops.Update(ctx, nil, 0, obj)
+	err = ops.Update(ctx, nil, obj)
 	assert.NoError(t, err, "Update")
 
 	v, err := testMap.Lookup(&TestKey{1})
 	assert.NoError(t, err, "Lookup")
 	assert.Equal(t, v.(*TestValue).Value, obj.Value.Value)
 
-	err = ops.Delete(ctx, nil, 0, obj)
+	err = ops.Delete(ctx, nil, obj)
 	assert.NoError(t, err, "Delete")
 
 	_, err = testMap.Lookup(&TestKey{1})
@@ -108,7 +109,7 @@ func Test_MapOpsPrune(t *testing.T) {
 		&TestLPMKey{},
 		&TestValue{},
 		maxEntries,
-		unix.BPF_F_NO_PREALLOC,
+		BPF_F_NO_PREALLOC,
 	)
 	err := testMap.OpenOrCreate()
 	require.NoError(t, err, "OpenOrCreate")
@@ -146,7 +147,7 @@ func Test_MapOps_ReconcilerExample(t *testing.T) {
 		&TestKey{},
 		&TestValue{},
 		maxEntries,
-		unix.BPF_F_NO_PREALLOC,
+		BPF_F_NO_PREALLOC,
 	)
 	err := exampleMap.OpenOrCreate()
 	require.NoError(t, err)
@@ -166,6 +167,13 @@ func Test_MapOps_ReconcilerExample(t *testing.T) {
 
 	// Create the map operations and the reconciler configuration.
 	ops := NewMapOps[*TestObject](exampleMap)
+
+	// Silence the hive log output.
+	oldLogLevel := logging.GetSlogLevel(logging.DefaultSlogLogger)
+	logging.SetSlogLevel(slog.LevelError)
+	t.Cleanup(func() {
+		logging.SetSlogLevel(oldLogLevel)
+	})
 
 	// Setup and start a hive to run the reconciler.
 	var db *statedb.DB

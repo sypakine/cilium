@@ -6,8 +6,10 @@
 package logging
 
 import (
-	"log/slog"
 	"log/syslog"
+
+	"github.com/sirupsen/logrus"
+	logrus_syslog "github.com/sirupsen/logrus/hooks/syslog"
 )
 
 const (
@@ -69,14 +71,15 @@ var (
 		"local7":   syslog.LOG_LOCAL7,
 	}
 
-	// syslogLevelMap maps slog.Level values to syslog.Priority levels.
-	syslogLevelMap = map[slog.Level]syslog.Priority{
-		LevelPanic:      syslog.LOG_ALERT,
-		LevelFatal:      syslog.LOG_CRIT,
-		slog.LevelError: syslog.LOG_ERR,
-		slog.LevelWarn:  syslog.LOG_WARNING,
-		slog.LevelInfo:  syslog.LOG_INFO,
-		slog.LevelDebug: syslog.LOG_DEBUG,
+	// syslogLevelMap maps logrus.Level values to syslog.Priority levels.
+	syslogLevelMap = map[logrus.Level]syslog.Priority{
+		logrus.PanicLevel: syslog.LOG_ALERT,
+		logrus.FatalLevel: syslog.LOG_CRIT,
+		logrus.ErrorLevel: syslog.LOG_ERR,
+		logrus.WarnLevel:  syslog.LOG_WARNING,
+		logrus.InfoLevel:  syslog.LOG_INFO,
+		logrus.DebugLevel: syslog.LOG_DEBUG,
+		logrus.TraceLevel: syslog.LOG_DEBUG,
 	}
 )
 
@@ -112,10 +115,12 @@ func setupSyslog(logOpts LogOptions, tag string, debug bool) error {
 	}
 
 	// Validate provided log level.
-	level, err := ParseLevel(logLevel)
+	level, err := logrus.ParseLevel(logLevel)
 	if err != nil {
-		Fatal(DefaultSlogLogger, err.Error())
+		DefaultLogger.Fatal(err)
 	}
+
+	SetLogLevel(level)
 
 	network := ""
 	address := ""
@@ -137,11 +142,13 @@ func setupSyslog(logOpts LogOptions, tag string, debug bool) error {
 	}
 
 	// Create syslog hook.
-	h, err := NewSyslogHook(network, address, severity|facility, tag, level)
+	h, err := logrus_syslog.NewSyslogHook(network, address, severity|facility, tag)
 	if err != nil {
-		Fatal(DefaultSlogLogger, err.Error())
+		DefaultLogger.Fatal(err)
 	}
-	AddHandlers(h)
+	// TODO: switch to a per-logger version when we upgrade to logrus >1.0.3
+	logrus.AddHook(h)
+	DefaultLogger.AddHook(h)
 
 	return nil
 }

@@ -12,7 +12,6 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/hive/cell"
-	"golang.org/x/sys/unix"
 
 	"github.com/cilium/cilium/pkg/bpf"
 	"github.com/cilium/cilium/pkg/datapath/linux/config/defines"
@@ -148,7 +147,7 @@ func newPolicyMaps(dc *option.DaemonConfig, lc cell.Lifecycle) (bpf.MapOut[*Poli
 		&PolicyKey4{},
 		&PolicyValue{},
 		maxPolicyEntries,
-		unix.BPF_F_NO_PREALLOC,
+		bpf.BPF_F_NO_PREALLOC,
 	)
 
 	m6 := bpf.NewMap(
@@ -157,7 +156,7 @@ func newPolicyMaps(dc *option.DaemonConfig, lc cell.Lifecycle) (bpf.MapOut[*Poli
 		&PolicyKey6{},
 		&PolicyValue{},
 		maxPolicyEntries,
-		unix.BPF_F_NO_PREALLOC,
+		bpf.BPF_F_NO_PREALLOC,
 	)
 
 	lc.Append(cell.Hook{

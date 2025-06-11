@@ -3,6 +3,7 @@
 # the load-balancing in datapath for packets originating from the backend.
 
 hive start
+db/initialized
 
 ### Case 1: 1) cookie, 2) pod 3) LRP
 
@@ -220,7 +221,6 @@ spec:
         - containerPort: 80
           name: tcp
           protocol: TCP
-  nodeName: testnode
 status:
   hostIP: 172.19.0.3
   hostIPs:

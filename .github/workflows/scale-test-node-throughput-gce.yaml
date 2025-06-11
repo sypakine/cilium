@@ -36,14 +36,14 @@ concurrency:
 
 env:
   # renovate: datasource=golang-version depName=go
-  go_version: 1.24.4
+  go_version: 1.24.3
   # Adding k8s.local to the end makes kops happy-
   # has stricter DNS naming requirements.
   test_name: node-throughput
   cluster_name: ${{ github.run_id }}-${{ github.run_attempt }}
   GCP_PERF_RESULTS_BUCKET: gs://cilium-scale-results
   # renovate: datasource=docker depName=google/cloud-sdk
-  gcloud_version: 525.0.0
+  gcloud_version: 521.0.0
 
 jobs:
   install-and-scaletest:
@@ -144,7 +144,7 @@ jobs:
           project_id: ${{ secrets.GCP_PERF_PROJECT_ID }}
 
       - name: Install Cilium CLI
-        uses: cilium/cilium-cli@6e65fa094c051aee03959dc9a75e66213e9050c7 # v0.18.4
+        uses: cilium/cilium-cli@e7f03e4ec38a7008f4f5b9855ca9df721a9db185 # v0.18.3
         with:
           skip-build: ${{ env.CILIUM_CLI_SKIP_BUILD }}
           image-repo: ${{ env.CILIUM_CLI_IMAGE_REPO }}
@@ -208,12 +208,25 @@ jobs:
             --kubeconfig=$HOME/.kube/config \
             2>&1 | tee cl2-output.txt
 
-      - name: Run common post steps
-        if: ${{ always() }}
-        uses: ./.github/actions/post-logic
+      - name: Features tested
+        uses: ./.github/actions/feature-status
         with:
-          artifacts_suffix: "${{ env.job_name }}"
-          job_status: "${{ job.status }}"
+          title: "Summary of all features tested"
+          json-filename: "${{ env.job_name }}"
+
+      - name: Get sysdump
+        if: ${{ always() && steps.run-cl2.outcome != 'skipped' }}
+        run: |
+          cilium status
+          cilium sysdump --output-filename cilium-sysdump-final
+          sudo chmod +r cilium-sysdump-final.zip
+
+      - name: Upload features tested
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: features-tested
+          path: ${{ env.job_name }}*.json
 
       - name: Cleanup cluster
         if: ${{ always() && steps.deploy-cluster.outcome != 'skipped' }}

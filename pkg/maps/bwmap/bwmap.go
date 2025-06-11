@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/cilium/hive/cell"
-	"golang.org/x/sys/unix"
 
 	"github.com/cilium/cilium/pkg/bpf"
 	"github.com/cilium/cilium/pkg/datapath/types"
@@ -68,7 +67,7 @@ func ThrottleMap() *bpf.Map {
 		&EdtId{},
 		&EdtInfo{},
 		MapSize,
-		unix.BPF_F_NO_PREALLOC,
+		bpf.BPF_F_NO_PREALLOC,
 	)
 }
 

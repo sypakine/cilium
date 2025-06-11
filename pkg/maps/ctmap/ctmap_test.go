@@ -15,7 +15,7 @@ import (
 )
 
 func init() {
-	InitMapInfo(nil, true, true, true)
+	InitMapInfo(true, true, true)
 }
 
 func TestCalculateInterval(t *testing.T) {

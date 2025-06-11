@@ -61,14 +61,8 @@ var (
 	//go:embed manifests/client-egress-to-cidrgroup-external-deny.yaml
 	clientEgressToCIDRGroupExternalDenyPolicyYAML string
 
-	//go:embed manifests/client-egress-to-cidrgroup-external-deny-v2alpha1.yaml
-	clientEgressToCIDRGroupExternalDenyPolicyV2Alpha1YAML string
-
 	//go:embed manifests/client-egress-to-cidrgroup-external-deny-label.yaml
 	clientEgressToCIDRGroupExternalDenyLabelPolicyYAML string
-
-	//go:embed manifests/client-egress-to-cidrgroup-external-deny-label-v2alpha1.yaml
-	clientEgressToCIDRGroupExternalDenyLabelPolicyV2Alpha1YAML string
 
 	//go:embed manifests/client-egress-l7-http.yaml
 	clientEgressL7HTTPPolicyYAML string
@@ -279,7 +273,6 @@ func concurrentTests(connTests []*check.ConnectivityTest) error {
 		podToPodEncryptionV2{},
 		nodeToNodeEncryption{},
 		egressGateway{},
-		egressGatewayMultigateway{},
 		egressGatewayExcludedCidrs{},
 		egressGatewayWithL7Policy{},
 		podToNodeCidrpolicy{},
@@ -295,7 +288,6 @@ func concurrentTests(connTests []*check.ConnectivityTest) error {
 		echoIngressMutualAuthSpiffe{},
 		podToIngressService{},
 		outsideToIngressService{},
-		l7LB{},
 		dnsOnly{},
 		toFqdns{},
 		toFqdnsWithProxy{},
@@ -303,7 +295,6 @@ func concurrentTests(connTests []*check.ConnectivityTest) error {
 		podToK8sOnControlplane{},
 		podToControlplaneHostCidr{},
 		podToK8sOnControlplaneCidr{},
-		policyLocalCluster{},
 		localRedirectPolicy{},
 		localRedirectPolicyWithNodeDNS{},
 		noFragmentation{},
@@ -333,36 +324,34 @@ func finalTests(ct *check.ConnectivityTest) error {
 	}, ct)
 }
 
-func renderTemplates(clusterNameLocal, clusterNameRemote string, param check.Parameters) (map[string]string, error) {
+func renderTemplates(clusterName string, param check.Parameters) (map[string]string, error) {
 	templates := map[string]string{
-		"clientEgressToCIDRExternalPolicyYAML":                       clientEgressToCIDRExternalPolicyYAML,
-		"clientEgressToCIDRExternalPolicyKNPYAML":                    clientEgressToCIDRExternalPolicyKNPYAML,
-		"clientEgressToCIDRNodeKNPYAML":                              clientEgressToCIDRNodeKNPYAML,
-		"clientEgressToCIDRExternalDenyPolicyYAML":                   clientEgressToCIDRExternalDenyPolicyYAML,
-		"clientEgressToCIDRGroupExternalDenyPolicyYAML":              clientEgressToCIDRGroupExternalDenyPolicyYAML,
-		"clientEgressToCIDRGroupExternalDenyPolicyV2Alpha1YAML":      clientEgressToCIDRGroupExternalDenyPolicyV2Alpha1YAML,
-		"clientEgressToCIDRGroupExternalDenyLabelPolicyYAML":         clientEgressToCIDRGroupExternalDenyLabelPolicyYAML,
-		"clientEgressToCIDRGroupExternalDenyLabelPolicyV2Alpha1YAML": clientEgressToCIDRGroupExternalDenyLabelPolicyV2Alpha1YAML,
-		"clientEgressL7HTTPPolicyYAML":                               clientEgressL7HTTPPolicyYAML,
-		"clientEgressL7HTTPPolicyPortRangeYAML":                      clientEgressL7HTTPPolicyPortRangeYAML,
-		"clientEgressL7HTTPNamedPortPolicyYAML":                      clientEgressL7HTTPNamedPortPolicyYAML,
-		"clientEgressToFQDNsPolicyYAML":                              clientEgressToFQDNsPolicyYAML,
-		"clientEgressToFQDNsAndHTTPGetPolicyYAML":                    clientEgressToFQDNsAndHTTPGetPolicyYAML,
-		"clientEgressTLSSNIPolicyYAML":                               clientEgressTLSSNIPolicyYAML,
-		"clientEgressTLSSNIWildcardPolicyYAML":                       clientEgressTLSSNIWildcardPolicyYAML,
-		"clientEgressTLSSNIDoubleWildcardPolicyYAML":                 clientEgressTLSSNIDoubleWildcardPolicyYAML,
-		"clientEgressTLSSNIOtherPolicyYAML":                          clientEgressTLSSNIOtherPolicyYAML,
-		"clientEgressL7TLSSNIPolicyYAML":                             clientEgressL7TLSSNIPolicyYAML,
-		"clientEgressL7TLSOtherSNIPolicyYAML":                        clientEgressL7TLSOtherSNIPolicyYAML,
-		"clientEgressL7TLSPolicyYAML":                                clientEgressL7TLSPolicyYAML,
-		"clientEgressL7TLSPolicyPortRangeYAML":                       clientEgressL7TLSPolicyPortRangeYAML,
-		"clientEgressL7HTTPMatchheaderSecretYAML":                    clientEgressL7HTTPMatchheaderSecretYAML,
-		"clientEgressL7HTTPMatchheaderSecretPortRangeYAML":           clientEgressL7HTTPMatchheaderSecretPortRangeYAML,
-		"clientEgressL7HTTPExternalYAML":                             clientEgressL7HTTPExternalYAML,
-		"clientEgressNodeLocalDNSYAML":                               clientEgressNodeLocalDNSYAML,
-		"clientEgressOnlyDNSPolicyYAML":                              clientEgressOnlyDNSPolicyYAML,
-		"echoIngressFromCIDRYAML":                                    echoIngressFromCIDRYAML,
-		"denyCIDRPolicyYAML":                                         denyCIDRPolicyYAML,
+		"clientEgressToCIDRExternalPolicyYAML":               clientEgressToCIDRExternalPolicyYAML,
+		"clientEgressToCIDRExternalPolicyKNPYAML":            clientEgressToCIDRExternalPolicyKNPYAML,
+		"clientEgressToCIDRNodeKNPYAML":                      clientEgressToCIDRNodeKNPYAML,
+		"clientEgressToCIDRExternalDenyPolicyYAML":           clientEgressToCIDRExternalDenyPolicyYAML,
+		"clientEgressToCIDRGroupExternalDenyPolicyYAML":      clientEgressToCIDRGroupExternalDenyPolicyYAML,
+		"clientEgressToCIDRGroupExternalDenyLabelPolicyYAML": clientEgressToCIDRGroupExternalDenyLabelPolicyYAML,
+		"clientEgressL7HTTPPolicyYAML":                       clientEgressL7HTTPPolicyYAML,
+		"clientEgressL7HTTPPolicyPortRangeYAML":              clientEgressL7HTTPPolicyPortRangeYAML,
+		"clientEgressL7HTTPNamedPortPolicyYAML":              clientEgressL7HTTPNamedPortPolicyYAML,
+		"clientEgressToFQDNsPolicyYAML":                      clientEgressToFQDNsPolicyYAML,
+		"clientEgressToFQDNsAndHTTPGetPolicyYAML":            clientEgressToFQDNsAndHTTPGetPolicyYAML,
+		"clientEgressTLSSNIPolicyYAML":                       clientEgressTLSSNIPolicyYAML,
+		"clientEgressTLSSNIWildcardPolicyYAML":               clientEgressTLSSNIWildcardPolicyYAML,
+		"clientEgressTLSSNIDoubleWildcardPolicyYAML":         clientEgressTLSSNIDoubleWildcardPolicyYAML,
+		"clientEgressTLSSNIOtherPolicyYAML":                  clientEgressTLSSNIOtherPolicyYAML,
+		"clientEgressL7TLSSNIPolicyYAML":                     clientEgressL7TLSSNIPolicyYAML,
+		"clientEgressL7TLSOtherSNIPolicyYAML":                clientEgressL7TLSOtherSNIPolicyYAML,
+		"clientEgressL7TLSPolicyYAML":                        clientEgressL7TLSPolicyYAML,
+		"clientEgressL7TLSPolicyPortRangeYAML":               clientEgressL7TLSPolicyPortRangeYAML,
+		"clientEgressL7HTTPMatchheaderSecretYAML":            clientEgressL7HTTPMatchheaderSecretYAML,
+		"clientEgressL7HTTPMatchheaderSecretPortRangeYAML":   clientEgressL7HTTPMatchheaderSecretPortRangeYAML,
+		"clientEgressL7HTTPExternalYAML":                     clientEgressL7HTTPExternalYAML,
+		"clientEgressNodeLocalDNSYAML":                       clientEgressNodeLocalDNSYAML,
+		"clientEgressOnlyDNSPolicyYAML":                      clientEgressOnlyDNSPolicyYAML,
+		"echoIngressFromCIDRYAML":                            echoIngressFromCIDRYAML,
+		"denyCIDRPolicyYAML":                                 denyCIDRPolicyYAML,
 	}
 	if param.K8sLocalHostTest {
 		templates["clientEgressToCIDRCPHostPolicyYAML"] = clientEgressToCIDRCPHostPolicyYAML
@@ -373,12 +362,10 @@ func renderTemplates(clusterNameLocal, clusterNameRemote string, param check.Par
 	for key, temp := range templates {
 		val, err := template.Render(temp, struct {
 			check.Parameters
-			ClusterNameLocal  string
-			ClusterNameRemote string
+			ClusterName string
 		}{
-			Parameters:        param,
-			ClusterNameLocal:  clusterNameLocal,
-			ClusterNameRemote: clusterNameRemote,
+			Parameters:  param,
+			ClusterName: clusterName,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to render template %s: %w", key, err)
@@ -395,10 +382,7 @@ func injectTests(tests []testBuilder, connTests ...*check.ConnectivityTest) erro
 	id := 0
 	for i := range tests {
 		if _, ok := templates[connTests[id].Params().TestNamespace]; !ok {
-			nsTemplates, err := renderTemplates(
-				connTests[id].ClusterNameLocal, connTests[id].ClusterNameRemote,
-				connTests[id].Params(),
-			)
+			nsTemplates, err := renderTemplates(connTests[id].ClusterName, connTests[id].Params())
 			if err != nil {
 				return err
 			}

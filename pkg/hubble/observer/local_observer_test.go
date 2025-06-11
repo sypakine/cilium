@@ -68,7 +68,7 @@ func TestLocalObserverServer_ServerStatus(t *testing.T) {
 	pp := noopParser(t)
 	s, err := NewLocalServer(pp, nsManager, hivetest.Logger(t), observeroption.WithMaxFlows(container.Capacity1))
 	require.NoError(t, err)
-	res, err := s.ServerStatus(t.Context(), &observerpb.ServerStatusRequest{})
+	res, err := s.ServerStatus(context.Background(), &observerpb.ServerStatusRequest{})
 	require.NoError(t, err)
 	assert.Equal(t, uint64(0), res.SeenFlows)
 	assert.Equal(t, uint64(0), res.NumFlows)
@@ -212,7 +212,7 @@ func TestLocalObserverServer_GetFlows(t *testing.T) {
 		},
 		FakeGRPCServerStream: &testutils.FakeGRPCServerStream{
 			OnContext: func() context.Context {
-				return t.Context()
+				return context.Background()
 			},
 		},
 	}
@@ -357,7 +357,7 @@ func TestLocalObserverServer_GetAgentEvents(t *testing.T) {
 		},
 		FakeGRPCServerStream: &testutils.FakeGRPCServerStream{
 			OnContext: func() context.Context {
-				return t.Context()
+				return context.Background()
 			},
 		},
 	}
@@ -471,7 +471,7 @@ func TestLocalObserverServer_GetFlows_Follow_Since(t *testing.T) {
 		},
 		FakeGRPCServerStream: &testutils.FakeGRPCServerStream{
 			OnContext: func() context.Context {
-				return t.Context()
+				return context.Background()
 			},
 		},
 	}
@@ -552,7 +552,7 @@ func TestLocalObserverServer_OnFlowDelivery(t *testing.T) {
 		},
 		FakeGRPCServerStream: &testutils.FakeGRPCServerStream{
 			OnContext: func() context.Context {
-				return t.Context()
+				return context.Background()
 			},
 		},
 	}
@@ -610,7 +610,7 @@ func TestLocalObserverServer_OnGetFlows(t *testing.T) {
 		},
 		FakeGRPCServerStream: &testutils.FakeGRPCServerStream{
 			OnContext: func() context.Context {
-				return t.Context()
+				return context.Background()
 			},
 		},
 	}
@@ -754,7 +754,7 @@ func TestLocalObserverServer_GetNamespaces(t *testing.T) {
 	})
 	s, err := NewLocalServer(pp, nsManager, hivetest.Logger(t), observeroption.WithMaxFlows(container.Capacity1))
 	require.NoError(t, err)
-	res, err := s.GetNamespaces(t.Context(), &observerpb.GetNamespacesRequest{})
+	res, err := s.GetNamespaces(context.Background(), &observerpb.GetNamespacesRequest{})
 	require.NoError(t, err)
 	expected := &observerpb.GetNamespacesResponse{
 		Namespaces: []*observerpb.Namespace{

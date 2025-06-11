@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/cilium/cilium/pkg/bpf"
+	"github.com/cilium/cilium/pkg/maps/encrypt"
 )
 
 // Cell provides the nodemap.MapV2 which contains information about node IDs, SPIs, and their IP addresses.
@@ -40,13 +41,16 @@ func newNodeMap(lifecycle cell.Lifecycle, conf Config, logger *slog.Logger) (bpf
 		return bpf.MapOut[MapV2]{}, fmt.Errorf("creating node map: bpf-node-map-max cannot be less than %d (%d)",
 			DefaultMaxEntries, conf.NodeMapMax)
 	}
-	nodeMap := newMapV2(logger, MapNameV2, conf)
+	nodeMap := newMapV2(logger, MapNameV2, MapName, conf)
 
 	lifecycle.Append(cell.Hook{
 		OnStart: func(context cell.HookContext) error {
-			nodeMap.migrateV1("cilium_node_map")
+			if err := nodeMap.init(); err != nil {
+				return err
+			}
 
-			return nodeMap.init()
+			// do v1 to v2 map migration if necessary
+			return nodeMap.migrateV1(MapName, encrypt.MapName)
 		},
 		OnStop: func(context cell.HookContext) error {
 			return nodeMap.close()

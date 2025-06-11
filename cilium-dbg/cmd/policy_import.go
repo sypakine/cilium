@@ -32,7 +32,7 @@ var policyImportCmd = &cobra.Command{
 		if ruleList, err := loadPolicy(path); err != nil {
 			Fatalf("Cannot parse policy %s: %s\n", path, err)
 		} else {
-			log.Debug("Constructed policy object for import", logfields.Rule, ruleList)
+			log.WithField("rule", logfields.Repr(ruleList)).Debug("Constructed policy object for import")
 
 			// Ignore request if no policies have been found
 			if len(ruleList) == 0 {

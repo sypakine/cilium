@@ -16,4 +16,3 @@ spec:
     nodeSelector:
       matchLabels:
         {{StructuralData .NodeSelector}}
-  egressGateways: []

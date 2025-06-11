@@ -362,21 +362,13 @@ func (g *GoBGPServer) deleteDefinedSets(ctx context.Context, definedSets []*gobg
 }
 
 // Stop closes gobgp server
-func (g *GoBGPServer) Stop(_ context.Context, r types.StopRequest) {
+func (g *GoBGPServer) Stop() {
 	g.stopMutex.Lock()
 	defer g.stopMutex.Unlock()
 
 	g.stopping = true
 
 	if g.server != nil {
-		if r.FullDestroy {
-			// Currently, the GoBGP implementation always sends Cease notification to all configured BGP peers during Stop().
-			// This breaks Graceful Restart, since "normal BGP procedures MUST be followed when the TCP session terminates
-			// due to the sending or receiving of a BGP NOTIFICATION message" (rfc4724, section 4).
-			// Therefore, for now, if FullDestroy is false, we do not call Stop() and leave the GoBGP server
-			// running until the process terminates.
-			// This should be revisited once GoBGP supports termination without sending the notification to the configured peers.
-			g.server.Stop()
-		}
+		g.server.Stop()
 	}
 }

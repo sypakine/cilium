@@ -97,7 +97,7 @@ func TestDelete(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid IP addr matching a single rule",
+			name: "valid IP addr matching rules",
 			preRun: func() netip.Addr {
 				runConfigure(t, fakeRoutingInfo, fakeIP, 1500)
 				return fakeIP
@@ -105,7 +105,7 @@ func TestDelete(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "IP addr doesn't match any rule",
+			name: "IP addr doesn't match rules",
 			preRun: func() netip.Addr {
 				ip := netip.MustParseAddr("192.168.2.233")
 
@@ -115,7 +115,7 @@ func TestDelete(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "IP addr matches multiple rules",
+			name: "IP addr matches more than number expected",
 			preRun: func() netip.Addr {
 				ip := netip.MustParseAddr("192.168.2.233")
 
@@ -130,7 +130,7 @@ func TestDelete(t *testing.T) {
 				require.NotEmpty(t, rules)
 
 				// Insert almost duplicate rule; the reason for this is to
-				// trigger the deletion of all the matching rules. We
+				// trigger an error while trying to delete the ingress rule. We
 				// are setting the Src because ingress rules don't have
 				// one (only Dst), thus we set Src to create a near-duplicate.
 				r := rules[0]
@@ -139,31 +139,30 @@ func TestDelete(t *testing.T) {
 
 				return ip
 			},
-			wantErr: false,
+			wantErr: true,
 		},
 		{
-			name: "delete rules with dest CIDR after masquerade is disabled",
+			name: "fails to delete rules due to masquerade misconfiguration",
 			preRun: func() netip.Addr {
 				runConfigure(t, fakeRoutingInfo, fakeIP, 1500)
+				// inconsistency with fakeRoutingInfo.Masquerade should lead to failure
 				option.Config.EnableIPv4Masquerade = false
 				return fakeIP
 			},
-			wantErr: false,
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ns := netns.NewNetNS(t)
-			ns.Do(func() error {
-				ifaceCleanup := createDummyDevice(t, masterMAC)
-				defer ifaceCleanup()
+		t.Log("Test: " + tt.name)
+		ns := netns.NewNetNS(t)
+		ns.Do(func() error {
+			ifaceCleanup := createDummyDevice(t, masterMAC)
+			defer ifaceCleanup()
 
-				ip := tt.preRun()
-				err := Delete(hivetest.Logger(t), ip, false)
-				require.Equalf(t, tt.wantErr, (err != nil), "got error: %v", err)
-
-				return nil
-			})
+			ip := tt.preRun()
+			err := Delete(hivetest.Logger(t), ip, false)
+			require.Equal(t, tt.wantErr, (err != nil))
+			return nil
 		})
 	}
 }

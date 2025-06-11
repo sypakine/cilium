@@ -19,7 +19,16 @@ For help with installing ``kubeadm`` and for more provisioning options please re
 
 .. note::
 
-   Cilium's kube-proxy replacement depends on the socket-LB feature.
+   Cilium's kube-proxy replacement depends on the socket-LB feature,
+   which requires a v4.19.57, v5.1.16, v5.2.0 or more recent Linux kernel.
+   Linux kernels v5.3 and v5.8 add additional features that Cilium can use to
+   further optimize the kube-proxy replacement implementation.
+
+   Note that v5.0.y kernels do not have the fix required to run the kube-proxy
+   replacement since at this point in time the v5.0.y stable kernel is end-of-life
+   (EOL) and not maintained anymore on kernel.org. For individual distribution
+   maintained kernels, the situation could differ. Therefore, please check with
+   your distribution.
 
 Quick-Start
 ###########
@@ -75,7 +84,7 @@ by using the following commands below.
 .. code-block:: shell-session
 
    $ kubectl -n kube-system delete ds kube-proxy
-   $ # Delete the configmap as well to avoid kube-proxy being reinstalled during a Kubeadm upgrade
+   $ # Delete the configmap as well to avoid kube-proxy being reinstalled during a Kubeadm upgrade (works only for K8s 1.19 and newer)
    $ kubectl -n kube-system delete cm kube-proxy
    $ # Run on each node with root permissions:
    $ iptables-save | grep -v KUBE | iptables-restore
@@ -916,7 +925,8 @@ with ``devices``, the XDP acceleration is enabled on all devices. This means tha
 each underlying device's driver must have native XDP support on all Cilium managed
 nodes. If you have an environment where some devices support XDP but others do not
 you can have XDP enabled on the supported devices by setting
-``loadBalancer.acceleration`` to ``best-effort``.
+``loadBalancer.acceleration`` to ``best-effort``. In addition, for performance
+reasons we recommend kernel >= 5.5 for the multi-device XDP acceleration.
 
 A list of drivers supporting XDP can be found in :ref:`the XDP documentation<xdp_drivers>`.
 
@@ -1175,9 +1185,10 @@ the reserved ports, set ``nodePort.autoProtectPortRanges`` to ``false``.
 
 By default, the NodePort implementation prevents application ``bind(2)`` requests
 to NodePort service ports. In such case, the application will typically see a
-``bind: Operation not permitted`` error. By default this happens only for the host
-namespace and therefore does not affect any application pod ``bind(2)`` requests.
-In order to opt-out from this behavior in general, this setting can be changed for
+``bind: Operation not permitted`` error. This happens either globally for older
+kernels or starting from v5.7 kernels only for the host namespace by default
+and therefore not affecting any application pod ``bind(2)`` requests anymore. In
+order to opt-out from this behavior in general, this setting can be changed for
 expert users by switching ``nodePort.bindProtection`` to ``false``.
 
 .. _Configuring Maps:
@@ -1379,27 +1390,40 @@ sent from outside the cluster to the service, the request's source IP address is
 used for determining the endpoint affinity. If a request is sent from inside
 the cluster, then the source depends on whether the socket-LB feature
 is used to load balance ClusterIP services. If yes, then the client's network
-namespace cookie is used as the source - it allows to implement affinity at the
-socket layer at which the socket-LB operates (a source IP is not available there,
-as the endpoint selection happens before a network packet has been built by the
+namespace cookie is used as the source. The latter was introduced in the 5.7
+Linux kernel to implement the affinity at the socket layer at which
+the socket-LB operates (a source IP is not available there, as the
+endpoint selection happens before a network packet has been built by the
 kernel). If the socket-LB is not used (i.e. the loadbalancing is done
 at the pod network interface, on a per-packet basis), then the request's source
 IP address is used as the source.
 
-The session affinity support is enabled by default. To disable the feature,
-set ``config.sessionAffinity=false``.
+The session affinity support is enabled by default for Cilium's kube-proxy
+replacement. For users who run on older kernels which do not support the network
+namespace cookies, a fallback in-cluster mode is implemented, which is based on
+a fixed cookie value as a trade-off. This makes all applications on the host to
+select the same service endpoint for a given service with session affinity configured.
+To disable the feature, set ``config.sessionAffinity=false``.
 
-The session affinity of a service with multiple ports is per service IP and port.
-Meaning that all requests for a given service sent from the same source and to the
-same service port will be routed to the same service endpoints; but two requests
-for the same service, sent from the same source but to different service ports may
-be routed to distinct service endpoints.
+When the fixed cookie value is not used, the session affinity of a service with
+multiple ports is per service IP and port. Meaning that all requests for a
+given service sent from the same source and to the same service port will be routed
+to the same service endpoints; but two requests for the same service, sent from
+the same source but to different service ports may be routed to distinct service
+endpoints.
 
 Note that if the session affinity feature is used in combination with Maglev
 consistent hashing to select backends, then Maglev will not take the source
 port as input for its hashing in order to respect the user's ClientIP choice
 (see also `GH#26709 <https://github.com/cilium/cilium/issues/26709>`__ for
 further details).
+
+For users who run with kube-proxy (i.e. with Cilium's kube-proxy replacement
+disabled), the ClusterIP service loadbalancing when a request is sent from a pod
+running in a non-host network namespace is still performed at the pod network
+interface (until `GH#16197 <https://github.com/cilium/cilium/issues/16197>`__ is
+fixed).  For this case the session affinity support is disabled by default. To
+enable the feature, set ``config.sessionAffinity=true``.
 
 kube-proxy Replacement Health Check server
 ******************************************
@@ -1422,6 +1446,16 @@ the field is empty, no restrictions for the access will be applied.
 When accessing the service from inside a cluster, the kube-proxy replacement will
 ignore the field regardless whether it is set. This means that any pod or any host
 process in the cluster will be able to access the ``LoadBalancer`` service internally.
+
+The load balancer source range check feature is enabled by default, and it can be
+disabled by setting ``config.svcSourceRangeCheck=false``.
+
+It makes sense to disable the check when running on some cloud providers e.g. `Amazon NLB
+<https://kubernetes.io/docs/concepts/services-networking/service/#aws-nlb-support>`__
+natively implements the check, so the kube-proxy replacement's feature can be disabled.
+Meanwhile `GKE internal TCP/UDP load balancer
+<https://cloud.google.com/kubernetes-engine/docs/how-to/service-parameters#lb_source_ranges>`__
+does not, so the feature must be kept enabled in order to restrict the access.
 
 By default the specified white-listed CIDRs in ``spec.loadBalancerSourceRanges``
 only apply to the ``LoadBalancer`` service, but not the corresponding ``NodePort``
@@ -1801,7 +1835,7 @@ Limitations
     * Cilium's eBPF kube-proxy replacement relies upon the socket-LB feature
       which uses eBPF cgroup hooks to implement the service translation. Using it with libceph
       deployments currently requires support for the getpeername(2) hook address translation in
-      eBPF.
+      eBPF, which is only available for kernels v5.8 and higher.
     * NFS and SMB mounts may break when mounted to a ``Service`` cluster IP while using socket-LB.
       This issue is known to impact Longhorn, Portworx, and Robin, but may impact other storage
       systems that implement ``ReadWriteMany`` volumes using this pattern. To avoid this problem,
@@ -1830,6 +1864,10 @@ Limitations
       setting will be ignored and a warning emitted to the Cilium agent log. Similarly,
       explicitly binding the ``hostIP`` to the loopback address in the host namespace is
       currently not supported and will log a warning to the Cilium agent log.
+    * When using the Socket-LB feature and deployed on kernels older than 5.7, Cilium is unable
+      to distinguish between host and pod namespaces due to the lack of kernel support for
+      network namespace cookies. As a result, Kubernetes services are reachable from all pods via
+      the loopback address.
     * The neighbor discovery in a multi-device environment doesn't work with the runtime device
       detection which means that the target devices for the neighbor discovery doesn't follow the
       device changes.

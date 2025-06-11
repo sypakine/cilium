@@ -659,12 +659,8 @@ func FormatStatusResponse(w io.Writer, sr *models.StatusResponse, sd StatusDetai
 			fields = append(fields, strings.Join(observer, ", "))
 		}
 
-		if sr.HubbleMetrics != nil {
-			metrics := sr.HubbleMetrics.State
-			if sr.HubbleMetrics.Msg != "" {
-				metrics = fmt.Sprintf("%s (%s)", metrics, sr.HubbleMetrics.Msg)
-			}
-			fields = append(fields, fmt.Sprintf("Metrics: %s", metrics))
+		if sr.Hubble.Metrics != nil {
+			fields = append(fields, fmt.Sprintf("Metrics: %s", sr.Hubble.Metrics.State))
 		}
 
 		fmt.Fprintf(w, "Hubble:\t%s\n", strings.Join(fields, "\t"))

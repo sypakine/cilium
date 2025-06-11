@@ -16,6 +16,7 @@ import (
 	"github.com/onsi/gomega/format"
 	"github.com/sirupsen/logrus"
 
+	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/test/config"
 	. "github.com/cilium/cilium/test/ginkgo-ext"
 	"github.com/cilium/cilium/test/helpers"
@@ -28,7 +29,7 @@ import (
 )
 
 var (
-	log             = logrus.New()
+	log             = logging.DefaultLogger
 	DefaultSettings = map[string]string{
 		"K8S_VERSION": "1.33",
 	}

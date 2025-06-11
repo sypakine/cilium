@@ -8,14 +8,13 @@
 #include <bpf/ctx/ctx.h>
 #include <bpf/api.h>
 
+#include "tailcall.h"
 #include "common.h"
 #include "overloadable.h"
 #include "identity.h"
 
 #include "lib/proxy.h"
 #include "lib/l4.h"
-
-#include "linux/icmpv6.h"
 
 /* ctx_is_wireguard is used to check whether ctx is a WireGuard network packet.
  * This function returns true in case all the following conditions are satisfied:
@@ -86,12 +85,17 @@ wg_maybe_redirect_to_encrypt(struct __ctx_buff *ctx, __be16 proto,
 		 * by filtering out icmpv6 NA.
 		 */
 		if (ip6->nexthdr == IPPROTO_ICMPV6) {
-			struct icmp6hdr *icmp6 = (void *)ip6 + sizeof(*ip6);
+			__u8 icmp_type;
 
-			if ((void *)icmp6 + sizeof(*icmp6) > data_end)
+			if (data + sizeof(*ip6) + ETH_HLEN +
+			    sizeof(struct icmp6hdr) > data_end)
 				return DROP_INVALID;
 
-			if (icmp6->icmp6_type == ICMPV6_NA_MSG)
+			if (icmp6_load_type(ctx, ETH_HLEN + sizeof(struct ipv6hdr),
+					    &icmp_type) < 0)
+				return DROP_INVALID;
+
+			if (icmp_type == ICMP6_NA_MSG_TYPE)
 				goto out;
 		}
 #endif

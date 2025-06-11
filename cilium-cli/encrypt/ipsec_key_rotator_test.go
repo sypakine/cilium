@@ -19,15 +19,15 @@ func Test_IsIPsecAlgoSupported(t *testing.T) {
 			expected: true,
 		},
 		{
-			have:     "rfc4106-gcm-aes",
+			have:     "gcm-aes",
 			expected: true,
 		},
 		{
-			have:     "cbc-aes-sha256",
+			have:     "hmac-sha256",
 			expected: true,
 		},
 		{
-			have:     "cbc-aes-sha512",
+			have:     "hmac-sha512",
 			expected: true,
 		},
 		{
@@ -115,7 +115,7 @@ func Test_rotateIPsecKey(t *testing.T) {
 			},
 		},
 		{
-			haveAlgo: "rfc4106-gcm-aes",
+			haveAlgo: "gcm-aes",
 			haveKey: ipsecKey{
 				spi: 16,
 			},
@@ -127,7 +127,7 @@ func Test_rotateIPsecKey(t *testing.T) {
 			},
 		},
 		{
-			haveAlgo: "cbc-aes-sha256",
+			haveAlgo: "hmac-sha256",
 			haveKey: ipsecKey{
 				spi: 3,
 			},
@@ -140,7 +140,7 @@ func Test_rotateIPsecKey(t *testing.T) {
 			},
 		},
 		{
-			haveAlgo: "cbc-aes-sha512",
+			haveAlgo: "hmac-sha512",
 			haveKey: ipsecKey{
 				spi: 4,
 			},
