@@ -33,6 +33,7 @@ func nodeConfig(lnc *datapath.LocalNodeConfiguration) config.Node {
 	}
 
 	node.SupportsFibLookupSkipNeigh = probes.HaveFibLookupSkipNeigh() == nil
+	node.IntraNodeVisibilityEnabled = option.Config.EnableIntraNodeVisibility
 
 	return node
 }
