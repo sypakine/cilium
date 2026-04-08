@@ -824,6 +824,9 @@ func InitGlobalFlags(logger *slog.Logger, cmd *cobra.Command, vp *viper.Viper) {
 	flags.MarkHidden(option.EnableCiliumNodeCRDName)
 	option.BindEnv(vp, option.EnableCiliumNodeCRDName)
 
+	flags.Bool(option.EnableSourceIPVerification, defaults.EnableSourceIPVerification, "Enable the check of the source IP on pod egress")
+	option.BindEnv(vp, option.EnableSourceIPVerification)
+
 	if err := vp.BindPFlags(flags); err != nil {
 		logging.Fatal(logger, "BindPFlags failed", logfields.Error, err)
 	}
