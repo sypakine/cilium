@@ -25,27 +25,28 @@
 #include "bpf_nat_tuples.h"
 
 #define IP_ENDPOINT 1
-#define IP_HOST     2
+#define IP_HOST	    2
 #define IP_ROUTER   3
 #define IP_WORLD    4
 
 static char pkt[100];
 
-#define SECLABEL    1
+#define SECLABEL 1
 
 #include <lib/nodeport.h>
 
 ASSIGN_CONFIG(__u16, device_mtu, 1500);
 
-__always_inline int mk_icmp4_error_pkt(void *dst, __u8 error_hdr, bool egress, bool rfc4884)
+__always_inline int
+mk_icmp4_error_pkt(void *dst, __u8 error_hdr, bool egress, bool rfc4884)
 {
 	void *orig = dst;
 	void *inner_l4_start;
 	void *icmp_ptr;
 
 	struct ethhdr l2 = {
-		.h_source = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF},
-		.h_dest = {0x12, 0x23, 0x34, 0x45, 0x56, 0x67},
+		.h_source = { 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF },
+		.h_dest = { 0x12, 0x23, 0x34, 0x45, 0x56, 0x67 },
 		.h_proto = bpf_htons(ETH_P_IP)
 	};
 	memcpy(dst, &l2, sizeof(struct ethhdr));
@@ -107,29 +108,30 @@ __always_inline int mk_icmp4_error_pkt(void *dst, __u8 error_hdr, bool egress, b
 	}
 
 	switch (error_hdr) {
-	case IPPROTO_TCP: {
+	case IPPROTO_TCP:
+	{
 		struct tcphdr inner_l4 = {
 			.source = bpf_htons(sport),
 			.dest = bpf_htons(dport),
 		};
 		{
-			__u64 l4_size =  rfc4884 ? sizeof(struct tcphdr) : 8;
+			__u64 l4_size = rfc4884 ? sizeof(struct tcphdr) : 8;
 
 			memcpy(dst, &inner_l4, l4_size);
 			dst += l4_size;
 		}
-	}
-		break;
-	case IPPROTO_UDP: {
+	} break;
+	case IPPROTO_UDP:
+	{
 		struct udphdr inner_l4 = {
 			.source = bpf_htons(sport),
 			.dest = bpf_htons(dport),
 		};
 		memcpy(dst, &inner_l4, sizeof(struct udphdr));
 		dst += sizeof(struct udphdr);
-	}
-		break;
-	case IPPROTO_SCTP: {
+	} break;
+	case IPPROTO_SCTP:
+	{
 		struct {
 			__be16 sport;
 			__be16 dport;
@@ -140,9 +142,9 @@ __always_inline int mk_icmp4_error_pkt(void *dst, __u8 error_hdr, bool egress, b
 
 		memcpy(dst, &inner_l4, sizeof(inner_l4));
 		dst += sizeof(inner_l4);
-	}
-		break;
-	case IPPROTO_ICMP: {
+	} break;
+	case IPPROTO_ICMP:
+	{
 		struct icmphdr inner_l4 __align_stack_8 = {
 			.type = egress ? ICMP_ECHOREPLY : ICMP_ECHO,
 			.un = {
@@ -153,8 +155,7 @@ __always_inline int mk_icmp4_error_pkt(void *dst, __u8 error_hdr, bool egress, b
 		};
 		memcpy(dst, &inner_l4, sizeof(struct icmphdr));
 		dst += sizeof(struct icmphdr);
-	}
-		break;
+	} break;
 	}
 	/* account for any content longer than 64 bits of the original data datagram
 	 * in accordance with RFC 4884
@@ -221,8 +222,7 @@ int test_nat4_icmp_error_tcp(__maybe_unused struct __ctx_buff *ctx)
 	map = get_cluster_snat_map_v4(target.cluster_id);
 	assert(map);
 
-	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target,
-				  false, NULL);
+	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target, false, NULL);
 	assert(ret == 0);
 
 	/* This is the entry-point of the test, calling
@@ -267,8 +267,7 @@ int test_nat4_icmp_error_tcp(__maybe_unused struct __ctx_buff *ctx)
 	} in_l4hdr;
 
 	in_l3_off = l4_off + sizeof(icmphdr);
-	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4,
-			   sizeof(in_ip4)) < 0)
+	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4, sizeof(in_ip4)) < 0)
 		test_fatal("can't load embedded ip headers");
 	assert(in_ip4.protocol == IPPROTO_TCP);
 	assert(in_ip4.saddr == bpf_htonl(IP_ENDPOINT));
@@ -341,8 +340,7 @@ int test_nat4_icmp_error_tcp_rfc1191(__maybe_unused struct __ctx_buff *ctx)
 	map = get_cluster_snat_map_v4(target.cluster_id);
 	assert(map);
 
-	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target,
-				  false, NULL);
+	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target, false, NULL);
 	assert(ret == 0);
 
 	/* This is the entry-point of the test, calling
@@ -387,8 +385,7 @@ int test_nat4_icmp_error_tcp_rfc1191(__maybe_unused struct __ctx_buff *ctx)
 	} in_l4hdr;
 
 	in_l3_off = l4_off + sizeof(icmphdr);
-	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4,
-			   sizeof(in_ip4)) < 0)
+	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4, sizeof(in_ip4)) < 0)
 		test_fatal("can't load embedded ip headers");
 	assert(in_ip4.protocol == IPPROTO_TCP);
 	assert(in_ip4.saddr == bpf_htonl(IP_ENDPOINT));
@@ -459,8 +456,7 @@ int test_nat4_icmp_error_udp(__maybe_unused struct __ctx_buff *ctx)
 	map = get_cluster_snat_map_v4(target.cluster_id);
 	assert(map);
 
-	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target,
-				  false, NULL);
+	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target, false, NULL);
 	assert(ret == 0);
 
 	/* This is the entry-point of the test, calling
@@ -505,8 +501,7 @@ int test_nat4_icmp_error_udp(__maybe_unused struct __ctx_buff *ctx)
 	} in_l4hdr;
 
 	in_l3_off = l4_off + sizeof(icmphdr);
-	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4,
-			   sizeof(in_ip4)) < 0)
+	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4, sizeof(in_ip4)) < 0)
 		test_fatal("can't load embedded ip headers");
 	assert(in_ip4.protocol == IPPROTO_UDP);
 	assert(in_ip4.saddr == bpf_htonl(IP_ENDPOINT));
@@ -572,8 +567,7 @@ int test_nat4_icmp_error_icmp(__maybe_unused struct __ctx_buff *ctx)
 	map = get_cluster_snat_map_v4(target.cluster_id);
 	assert(map);
 
-	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target,
-				  false, NULL);
+	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target, false, NULL);
 	assert(ret == 0);
 
 	/* This is the entry-point of the test, calling
@@ -615,8 +609,7 @@ int test_nat4_icmp_error_icmp(__maybe_unused struct __ctx_buff *ctx)
 	struct icmphdr in_l4hdr __align_stack_8;
 
 	in_l3_off = l4_off + sizeof(icmphdr);
-	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4,
-			   sizeof(in_ip4)) < 0)
+	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4, sizeof(in_ip4)) < 0)
 		test_fatal("can't load embedded ip headers");
 	assert(in_ip4.protocol == IPPROTO_ICMP);
 	assert(in_ip4.saddr == bpf_htonl(IP_ENDPOINT));
@@ -674,8 +667,7 @@ int test_nat4_icmp_error_sctp(__maybe_unused struct __ctx_buff *ctx)
 	map = get_cluster_snat_map_v4(target.cluster_id);
 	assert(map);
 
-	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target,
-				  false, NULL);
+	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target, false, NULL);
 	assert(ret == 0);
 
 	/* This is the entry-point of the test, calling
@@ -739,8 +731,7 @@ int test_nat4_icmp_error_tcp_egress(__maybe_unused struct __ctx_buff *ctx)
 	map = get_cluster_snat_map_v4(target.cluster_id);
 	assert(map);
 
-	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target,
-				  false, NULL);
+	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target, false, NULL);
 	assert(ret == 0);
 
 	struct ipv4_ct_tuple icmp_tuple = {};
@@ -756,8 +747,9 @@ int test_nat4_icmp_error_tcp_egress(__maybe_unused struct __ctx_buff *ctx)
 	/* This is the entry-point of the test, calling
 	 * snat_v4_nat().
 	 */
-	ret = snat_v4_nat(ctx, &icmp_tuple, ip4, ipfrag_encode_ipv4(ip4),
-			  l4_off, &target, &trace, NULL);
+	ret = snat_v4_nat(
+		ctx, &icmp_tuple, ip4, ipfrag_encode_ipv4(ip4), l4_off, &target,
+		&trace, NULL);
 	assert(ret == 0);
 
 	__be16 proto;
@@ -791,8 +783,7 @@ int test_nat4_icmp_error_tcp_egress(__maybe_unused struct __ctx_buff *ctx)
 	} in_l4hdr;
 
 	in_l3_off = l4_off + sizeof(icmphdr);
-	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4,
-			   sizeof(in_ip4)) < 0)
+	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4, sizeof(in_ip4)) < 0)
 		test_fatal("can't load embedded ip headers");
 	assert(in_ip4.protocol == IPPROTO_TCP);
 	assert(in_ip4.saddr == bpf_htonl(IP_WORLD));
@@ -864,8 +855,7 @@ int test_nat4_icmp_error_tcp_egress_rfc1191(__maybe_unused struct __ctx_buff *ct
 	map = get_cluster_snat_map_v4(target.cluster_id);
 	assert(map);
 
-	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target,
-				  false, NULL);
+	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target, false, NULL);
 	assert(ret == 0);
 
 	struct ipv4_ct_tuple icmp_tuple = {};
@@ -881,8 +871,9 @@ int test_nat4_icmp_error_tcp_egress_rfc1191(__maybe_unused struct __ctx_buff *ct
 	/* This is the entry-point of the test, calling
 	 * snat_v4_nat().
 	 */
-	ret = snat_v4_nat(ctx, &icmp_tuple, ip4, ipfrag_encode_ipv4(ip4),
-			  l4_off, &target, &trace, NULL);
+	ret = snat_v4_nat(
+		ctx, &icmp_tuple, ip4, ipfrag_encode_ipv4(ip4), l4_off, &target,
+		&trace, NULL);
 	assert(ret == 0);
 
 	__be16 proto;
@@ -916,8 +907,7 @@ int test_nat4_icmp_error_tcp_egress_rfc1191(__maybe_unused struct __ctx_buff *ct
 	} in_l4hdr;
 
 	in_l3_off = l4_off + sizeof(icmphdr);
-	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4,
-			   sizeof(in_ip4)) < 0)
+	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4, sizeof(in_ip4)) < 0)
 		test_fatal("can't load embedded ip headers");
 	assert(in_ip4.protocol == IPPROTO_TCP);
 	assert(in_ip4.saddr == bpf_htonl(IP_WORLD));
@@ -977,9 +967,9 @@ int test_nat4_icmp_error_udp_egress(__maybe_unused struct __ctx_buff *ctx)
 		.flags = 0,
 	};
 	struct ipv4_nat_target target = {
-	    .addr = bpf_htonl(IP_HOST),
-	    .min_port = NODEPORT_PORT_MIN_NAT - 1,
-	    .max_port = NODEPORT_PORT_MIN_NAT - 1,
+		.addr = bpf_htonl(IP_HOST),
+		.min_port = NODEPORT_PORT_MIN_NAT - 1,
+		.max_port = NODEPORT_PORT_MIN_NAT - 1,
 	};
 	struct ipv4_nat_entry state;
 	void *map;
@@ -987,8 +977,7 @@ int test_nat4_icmp_error_udp_egress(__maybe_unused struct __ctx_buff *ctx)
 	map = get_cluster_snat_map_v4(target.cluster_id);
 	assert(map);
 
-	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target,
-				  false, NULL);
+	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target, false, NULL);
 	assert(ret == 0);
 
 	struct ipv4_ct_tuple icmp_tuple = {};
@@ -1004,8 +993,9 @@ int test_nat4_icmp_error_udp_egress(__maybe_unused struct __ctx_buff *ctx)
 	/* This is the entry-point of the test, calling
 	 * snat_v4_nat().
 	 */
-	ret = snat_v4_nat(ctx, &icmp_tuple, ip4, ipfrag_encode_ipv4(ip4),
-			  l4_off, &target, &trace, NULL);
+	ret = snat_v4_nat(
+		ctx, &icmp_tuple, ip4, ipfrag_encode_ipv4(ip4), l4_off, &target,
+		&trace, NULL);
 	assert(ret == 0);
 
 	__be16 proto;
@@ -1039,8 +1029,7 @@ int test_nat4_icmp_error_udp_egress(__maybe_unused struct __ctx_buff *ctx)
 	} in_l4hdr;
 
 	in_l3_off = l4_off + sizeof(icmphdr);
-	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4,
-			   sizeof(in_ip4)) < 0)
+	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4, sizeof(in_ip4)) < 0)
 		test_fatal("can't load embedded ip headers");
 	assert(in_ip4.protocol == IPPROTO_UDP);
 	assert(in_ip4.saddr == bpf_htonl(IP_WORLD));
@@ -1095,9 +1084,9 @@ int test_nat4_icmp_error_icmp_egress(__maybe_unused struct __ctx_buff *ctx)
 		.flags = 0,
 	};
 	struct ipv4_nat_target target = {
-	    .addr = bpf_htonl(IP_HOST),
-	    .min_port = NODEPORT_PORT_MIN_NAT - 1,
-	    .max_port = NODEPORT_PORT_MIN_NAT - 1,
+		.addr = bpf_htonl(IP_HOST),
+		.min_port = NODEPORT_PORT_MIN_NAT - 1,
+		.max_port = NODEPORT_PORT_MIN_NAT - 1,
 	};
 	struct ipv4_nat_entry state;
 	void *map;
@@ -1105,8 +1094,7 @@ int test_nat4_icmp_error_icmp_egress(__maybe_unused struct __ctx_buff *ctx)
 	map = get_cluster_snat_map_v4(target.cluster_id);
 	assert(map);
 
-	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target,
-				  false, NULL);
+	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target, false, NULL);
 	assert(ret == 0);
 
 	struct ipv4_ct_tuple icmp_tuple = {};
@@ -1122,8 +1110,9 @@ int test_nat4_icmp_error_icmp_egress(__maybe_unused struct __ctx_buff *ctx)
 	/* This is the entry-point of the test, calling
 	 * snat_v4_nat().
 	 */
-	ret = snat_v4_nat(ctx, &icmp_tuple, ip4, ipfrag_encode_ipv4(ip4),
-			  l4_off, &target, &trace, NULL);
+	ret = snat_v4_nat(
+		ctx, &icmp_tuple, ip4, ipfrag_encode_ipv4(ip4), l4_off, &target,
+		&trace, NULL);
 	assert(ret == 0);
 
 	__be16 proto;
@@ -1154,8 +1143,7 @@ int test_nat4_icmp_error_icmp_egress(__maybe_unused struct __ctx_buff *ctx)
 	struct icmphdr in_l4hdr __align_stack_8;
 
 	in_l3_off = l4_off + sizeof(icmphdr);
-	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4,
-			   sizeof(in_ip4)) < 0)
+	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4, sizeof(in_ip4)) < 0)
 		test_fatal("can't load embedded ip headers");
 	assert(in_ip4.protocol == IPPROTO_ICMP);
 	assert(in_ip4.saddr == bpf_htonl(IP_WORLD));
@@ -1197,14 +1185,14 @@ int test_nat4_icmp_error_sctp_egress(__maybe_unused struct __ctx_buff *ctx)
 		.nexthdr = IPPROTO_SCTP,
 		.saddr = bpf_htonl(IP_ENDPOINT),
 		.daddr = bpf_htonl(IP_WORLD),
-		.sport = bpf_htons(32767),  /* STCP requires ports are the same after NAT */
+		.sport = bpf_htons(32767), /* STCP requires ports are the same after NAT */
 		.dport = bpf_htons(79),
 		.flags = 0,
 	};
 	struct ipv4_nat_target target = {
-	    .addr = bpf_htonl(IP_HOST),
-	    .min_port = NODEPORT_PORT_MIN_NAT - 1,
-	    .max_port = NODEPORT_PORT_MIN_NAT,
+		.addr = bpf_htonl(IP_HOST),
+		.min_port = NODEPORT_PORT_MIN_NAT - 1,
+		.max_port = NODEPORT_PORT_MIN_NAT,
 	};
 	struct ipv4_nat_entry state;
 	void *map;
@@ -1212,8 +1200,7 @@ int test_nat4_icmp_error_sctp_egress(__maybe_unused struct __ctx_buff *ctx)
 	map = get_cluster_snat_map_v4(target.cluster_id);
 	assert(map);
 
-	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target,
-				  false, NULL);
+	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target, false, NULL);
 	assert(ret == 0);
 
 	struct ipv4_ct_tuple icmp_tuple = {};
@@ -1229,8 +1216,9 @@ int test_nat4_icmp_error_sctp_egress(__maybe_unused struct __ctx_buff *ctx)
 	/* This is the entry-point of the test, calling
 	 * snat_v4_nat().
 	 */
-	ret = snat_v4_nat(ctx, &icmp_tuple, ip4, ipfrag_encode_ipv4(ip4),
-			  l4_off, &target, &trace, NULL);
+	ret = snat_v4_nat(
+		ctx, &icmp_tuple, ip4, ipfrag_encode_ipv4(ip4), l4_off, &target,
+		&trace, NULL);
 	assert(ret == 0);
 
 	__be16 proto;
@@ -1264,8 +1252,7 @@ int test_nat4_icmp_error_sctp_egress(__maybe_unused struct __ctx_buff *ctx)
 	} in_l4hdr;
 
 	in_l3_off = l4_off + sizeof(icmphdr);
-	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4,
-			   sizeof(in_ip4)) < 0)
+	if (ctx_load_bytes(ctx, in_l3_off, &in_ip4, sizeof(in_ip4)) < 0)
 		test_fatal("can't load embedded ip headers");
 	assert(in_ip4.protocol == IPPROTO_SCTP);
 	assert(in_ip4.saddr == bpf_htonl(IP_WORLD));
@@ -1287,10 +1274,10 @@ __u32 daddrs[] = {
 
 /* 16 sets of port samples. */
 #define SNAT_TEST_CLIENTS 16
-#define SNAT_TEST_ITERATIONS \
+#define SNAT_TEST_ITERATIONS                                   \
 	SIMPLE_MIN(ARRAY_SIZE(tcp_ports0) * SNAT_TEST_CLIENTS, \
-		   ARRAY_SIZE(daddrs) * (NODEPORT_PORT_MAX_NAT - \
-		   NODEPORT_PORT_MIN_NAT + 1))
+		   ARRAY_SIZE(daddrs) *                        \
+			   (NODEPORT_PORT_MAX_NAT - NODEPORT_PORT_MIN_NAT + 1))
 
 static __u32 retries_before[SNAT_COLLISION_RETRIES + 1];
 static __u32 retries_10percent[SNAT_COLLISION_RETRIES + 1];
@@ -1301,7 +1288,8 @@ static __u32 retries_100percent[SNAT_COLLISION_RETRIES + 1];
 static __always_inline bool store_retries(__u32 *buf, bool dump)
 {
 	for (__u32 i = 0; i <= SNAT_COLLISION_RETRIES; i++) {
-		__u32 *v = map_lookup_elem(&cilium_snat_v4_alloc_retries, &(__u32){i});
+		__u32 *v = map_lookup_elem(
+			&cilium_snat_v4_alloc_retries, &(__u32){ i });
 
 		if (!v)
 			return false;
@@ -1354,26 +1342,59 @@ static long snat_callback_tcp(__u32 i, struct snat_callback_ctx *ctx)
 
 	/* Keep in sync with SNAT_TEST_CLIENTS. */
 	switch (client) {
-	case 0: ports = tcp_ports0; break;
-	case 1: ports = tcp_ports1; break;
-	case 2: ports = tcp_ports2; break;
-	case 3: ports = tcp_ports3; break;
-	case 4: ports = tcp_ports4; break;
-	case 5: ports = tcp_ports5; break;
-	case 6: ports = tcp_ports6; break;
-	case 7: ports = tcp_ports7; break;
-	case 8: ports = tcp_ports8; break;
-	case 9: ports = tcp_ports9; break;
-	case 10: ports = tcp_ports10; break;
-	case 11: ports = tcp_ports11; break;
-	case 12: ports = tcp_ports12; break;
-	case 13: ports = tcp_ports13; break;
-	case 14: ports = tcp_ports14; break;
-	case 15: ports = tcp_ports15; break;
+	case 0:
+		ports = tcp_ports0;
+		break;
+	case 1:
+		ports = tcp_ports1;
+		break;
+	case 2:
+		ports = tcp_ports2;
+		break;
+	case 3:
+		ports = tcp_ports3;
+		break;
+	case 4:
+		ports = tcp_ports4;
+		break;
+	case 5:
+		ports = tcp_ports5;
+		break;
+	case 6:
+		ports = tcp_ports6;
+		break;
+	case 7:
+		ports = tcp_ports7;
+		break;
+	case 8:
+		ports = tcp_ports8;
+		break;
+	case 9:
+		ports = tcp_ports9;
+		break;
+	case 10:
+		ports = tcp_ports10;
+		break;
+	case 11:
+		ports = tcp_ports11;
+		break;
+	case 12:
+		ports = tcp_ports12;
+		break;
+	case 13:
+		ports = tcp_ports13;
+		break;
+	case 14:
+		ports = tcp_ports14;
+		break;
+	case 15:
+		ports = tcp_ports15;
+		break;
 	}
 	otuple.sport = bpf_htons(ports[port_idx]);
 	map = get_cluster_snat_map_v4(0);
-	ctx->err = snat_v4_new_mapping(ctx->ctx, map, &otuple, &ostate, &target, true, &ext_err);
+	ctx->err = snat_v4_new_mapping(
+		ctx->ctx, map, &otuple, &ostate, &target, true, &ext_err);
 
 	if (ctx->err == DROP_NAT_NO_MAPPING && !ext_err) {
 		ctx->err = 0;
@@ -1431,10 +1452,12 @@ int test_nat4_port_allocation_tcp_check(struct __ctx_buff *ctx)
 	assert(retries_50percent[SNAT_COLLISION_RETRIES] < 25);
 
 	/* Less than 7% of failures at 75% of the test. */
-	assert(retries_75percent[SNAT_COLLISION_RETRIES] < SNAT_TEST_ITERATIONS * 75 * 7 / 10000);
+	assert(retries_75percent[SNAT_COLLISION_RETRIES] <
+	       SNAT_TEST_ITERATIONS * 75 * 7 / 10000);
 
 	/* Less than 16% of failures at 100% of the test. */
-	assert(retries_100percent[SNAT_COLLISION_RETRIES] < SNAT_TEST_ITERATIONS * 16 / 100);
+	assert(retries_100percent[SNAT_COLLISION_RETRIES] <
+	       SNAT_TEST_ITERATIONS * 16 / 100);
 
 	/* Negligible amount of ports allocated after 10+ retries. */
 	for (__u32 i = 10; i < SNAT_COLLISION_RETRIES; i++)
@@ -1481,26 +1504,59 @@ static long snat_callback_udp(__u32 i, struct snat_callback_ctx *ctx)
 
 	/* Keep in sync with SNAT_TEST_CLIENTS. */
 	switch (client) {
-	case 0: ports = udp_ports0; break;
-	case 1: ports = udp_ports1; break;
-	case 2: ports = udp_ports2; break;
-	case 3: ports = udp_ports3; break;
-	case 4: ports = udp_ports4; break;
-	case 5: ports = udp_ports5; break;
-	case 6: ports = udp_ports6; break;
-	case 7: ports = udp_ports7; break;
-	case 8: ports = udp_ports8; break;
-	case 9: ports = udp_ports9; break;
-	case 10: ports = udp_ports10; break;
-	case 11: ports = udp_ports11; break;
-	case 12: ports = udp_ports12; break;
-	case 13: ports = udp_ports13; break;
-	case 14: ports = udp_ports14; break;
-	case 15: ports = udp_ports15; break;
+	case 0:
+		ports = udp_ports0;
+		break;
+	case 1:
+		ports = udp_ports1;
+		break;
+	case 2:
+		ports = udp_ports2;
+		break;
+	case 3:
+		ports = udp_ports3;
+		break;
+	case 4:
+		ports = udp_ports4;
+		break;
+	case 5:
+		ports = udp_ports5;
+		break;
+	case 6:
+		ports = udp_ports6;
+		break;
+	case 7:
+		ports = udp_ports7;
+		break;
+	case 8:
+		ports = udp_ports8;
+		break;
+	case 9:
+		ports = udp_ports9;
+		break;
+	case 10:
+		ports = udp_ports10;
+		break;
+	case 11:
+		ports = udp_ports11;
+		break;
+	case 12:
+		ports = udp_ports12;
+		break;
+	case 13:
+		ports = udp_ports13;
+		break;
+	case 14:
+		ports = udp_ports14;
+		break;
+	case 15:
+		ports = udp_ports15;
+		break;
 	}
 	otuple.sport = bpf_htons(ports[port_idx]);
 	map = get_cluster_snat_map_v4(0);
-	ctx->err = snat_v4_new_mapping(ctx->ctx, map, &otuple, &ostate, &target, true, &ext_err);
+	ctx->err = snat_v4_new_mapping(
+		ctx->ctx, map, &otuple, &ostate, &target, true, &ext_err);
 
 	if (ctx->err == DROP_NAT_NO_MAPPING && !ext_err) {
 		ctx->err = 0;
@@ -1558,10 +1614,12 @@ int test_nat4_port_allocation_udp_check(struct __ctx_buff *ctx)
 	assert(retries_50percent[SNAT_COLLISION_RETRIES] < 25);
 
 	/* Less than 7% of failures at 75% of the test. */
-	assert(retries_75percent[SNAT_COLLISION_RETRIES] < SNAT_TEST_ITERATIONS * 75 * 7 / 10000);
+	assert(retries_75percent[SNAT_COLLISION_RETRIES] <
+	       SNAT_TEST_ITERATIONS * 75 * 7 / 10000);
 
 	/* Less than 16% of failures at 100% of the test. */
-	assert(retries_100percent[SNAT_COLLISION_RETRIES] < SNAT_TEST_ITERATIONS * 16 / 100);
+	assert(retries_100percent[SNAT_COLLISION_RETRIES] <
+	       SNAT_TEST_ITERATIONS * 16 / 100);
 
 	/* Negligible amount of ports allocated after 11+ retries. */
 	for (__u32 i = 11; i < SNAT_COLLISION_RETRIES; i++)
@@ -1572,6 +1630,88 @@ int test_nat4_port_allocation_udp_check(struct __ctx_buff *ctx)
 		assert(retries_100percent[i] <= retries_100percent[i - 1]);
 	for (__u32 i = 6; i < SNAT_COLLISION_RETRIES; i++)
 		assert(retries_100percent[i] <= retries_100percent[5]);
+
+	test_finish();
+}
+
+CHECK("tc", "nat4_skip_hostport")
+int test_nat4_skip_hostport(__maybe_unused struct __ctx_buff *ctx)
+{
+	struct ipv4_ct_tuple tuple = {
+		.nexthdr = IPPROTO_TCP,
+		.saddr = bpf_htonl(IP_ENDPOINT),
+		.daddr = bpf_htonl(IP_WORLD),
+		.sport = bpf_htons(30001),
+		.dport = bpf_htons(80),
+		.flags = NAT_DIR_EGRESS,
+	};
+	struct ipv4_nat_target target = {
+		.addr = bpf_htonl(IP_HOST),
+		.min_port = 30001,
+		.max_port = 30002,
+	};
+	struct lb4_key svc_key = {
+		.address = bpf_htonl(IP_HOST),
+		.dport = bpf_htons(30001),
+		.proto = IPPROTO_TCP,
+		.scope = LB_LOOKUP_SCOPE_EXT,
+	};
+	struct lb4_service svc_val = {
+		.count = 1,
+		.flags = SVC_FLAG_HOSTPORT,
+	};
+	struct ipv4_ct_tuple rtuple = {};
+	struct ipv4_nat_entry state;
+	void *map;
+	int ret;
+
+	test_init();
+
+	/* This test checks that ports allocated as hostports are not used for SNAT port selection.
+	 */
+
+	map = get_cluster_snat_map_v4(target.cluster_id);
+	assert(map);
+
+	// Simulate a hostport 30001
+	ret = map_update_elem(&cilium_lb4_services_v2, &svc_key, &svc_val, BPF_ANY);
+	assert(ret == 0);
+
+	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target, false, NULL);
+	assert(ret == 0);
+	assert(state.to_sport == bpf_htons(30002));
+
+	// Restore state
+	set_v4_rtuple(&tuple, &state, &rtuple);
+	map_delete_elem(map, &tuple);
+	map_delete_elem(map, &rtuple);
+	map_delete_elem(&cilium_lb4_services_v2, &svc_key);
+
+	// Simulate host port for wildcard address on port 30001
+	svc_key.address = 0;
+	ret = map_update_elem(&cilium_lb4_services_v2, &svc_key, &svc_val, BPF_ANY);
+	assert(ret == 0);
+
+	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target, false, NULL);
+	assert(ret == 0);
+	assert(state.to_sport == bpf_htons(30002));
+
+	// Restore state
+	set_v4_rtuple(&tuple, &state, &rtuple);
+	map_delete_elem(map, &tuple);
+	map_delete_elem(map, &rtuple);
+	map_delete_elem(&cilium_lb4_services_v2, &svc_key);
+
+	// No host port on 30001 preserves original port
+	ret = snat_v4_new_mapping(ctx, map, &tuple, &state, &target, false, NULL);
+	assert(ret == 0);
+	assert(state.to_sport == bpf_htons(30001));
+
+	// Restore state
+
+	set_v4_rtuple(&tuple, &state, &rtuple);
+	map_delete_elem(map, &tuple);
+	map_delete_elem(map, &rtuple);
 
 	test_finish();
 }

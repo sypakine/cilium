@@ -23,6 +23,7 @@
 #include "eps.h"
 #include "icmp.h"
 #include "icmp6.h"
+#include "lb.h"
 #include "nat_46x64.h"
 #include "signal.h"
 #include "trace.h"
@@ -262,6 +263,29 @@ set_v4_rtuple(const struct ipv4_ct_tuple *otuple,
 	rtuple->dport = ostate->to_sport;
 }
 
+static __always_inline bool
+snat_v4_port_is_hostport(__be32 addr, __be16 dport, __u8 nexthdr)
+{
+	const struct lb4_service *svc;
+	struct lb4_key key = {
+		.address = addr,
+		.dport = dport,
+		.proto = nexthdr,
+		.scope = LB_LOOKUP_SCOPE_EXT,
+	};
+
+	svc = __lb4_lookup_service(&key);
+	if (svc && lb4_svc_is_hostport(svc))
+		return true;
+
+	key.address = 0;
+	svc = __lb4_lookup_service(&key);
+	if (svc && lb4_svc_is_hostport(svc))
+		return true;
+
+	return false;
+}
+
 static __always_inline int snat_v4_new_mapping(const struct __ctx_buff *ctx,
 					       const void *map,
 					       const struct ipv4_ct_tuple *otuple,
@@ -300,9 +324,10 @@ static __always_inline int snat_v4_new_mapping(const struct __ctx_buff *ctx,
 #pragma unroll
 	for (retries = 0; retries < SNAT_COLLISION_RETRIES; retries++) {
 		rtuple.dport = bpf_htons(port);
-
-		/* Try to create a RevSNAT entry. */
-		if (__snat_create(map, &rtuple, &rstate, true) == 0)
+		/* Try to create a RevSNAT entry if port is not used by a HostPort. */
+		if (!snat_v4_port_is_hostport(
+			    target->addr, rtuple.dport, otuple->nexthdr) &&
+		    __snat_create(map, &rtuple, &rstate, true) == 0)
 			goto create_nat_entry;
 
 		port = __snat_clamp_port_range(target->min_port,
