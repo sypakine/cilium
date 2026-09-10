@@ -39,7 +39,6 @@ import (
 	"github.com/cilium/cilium/pkg/maps/nodemap"
 	"github.com/cilium/cilium/pkg/maps/policymap"
 	"github.com/cilium/cilium/pkg/maps/vtep"
-	"github.com/cilium/cilium/pkg/netns"
 	"github.com/cilium/cilium/pkg/node"
 	"github.com/cilium/cilium/pkg/option"
 )
@@ -166,9 +165,6 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *config.Config) erro
 	cDefinesMap["POLICY_PROG_MAP_SIZE"] = fmt.Sprintf("%d", policymap.PolicyCallMaxEntries)
 	cDefinesMap["L2_RESPONDER_MAP4_SIZE"] = fmt.Sprintf("%d", l2respondermap.DefaultMaxEntries)
 	cDefinesMap["L2_RESPONDER_MAP6_SIZE"] = fmt.Sprintf("%d", l2v6respondermap.DefaultMaxEntries)
-	cDefinesMap["CT_REPORT_INTERVAL"] = fmt.Sprintf("%d", int64(option.Config.MonitorAggregationInterval.Seconds()))
-	cDefinesMap["CT_REPORT_FLAGS"] = fmt.Sprintf("%#04x", int64(option.Config.MonitorAggregationFlags))
-
 	if option.Config.PreAllocateMaps {
 		cDefinesMap["PREALLOCATE_MAPS"] = "1"
 	}
@@ -221,19 +217,6 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *config.Config) erro
 		}
 		if option.Config.UnsafeDaemonConfigOption.EnableSocketLBTracing {
 			cDefinesMap["TRACE_SOCK_NOTIFY"] = "1"
-		}
-
-		if cookie, err := netns.GetNetNSCookie(); err == nil {
-			// When running in nested environments (e.g. Kind), cilium-agent does
-			// not run in the host netns. So, in such cases the cookie comparison
-			// based on bpf_get_netns_cookie(NULL) for checking whether a socket
-			// belongs to a host netns does not work.
-			//
-			// To fix this, we derive the cookie of the netns in which cilium-agent
-			// runs via getsockopt(...SO_NETNS_COOKIE...) and then use it in the
-			// check above. This is based on an assumption that cilium-agent
-			// always runs with "hostNetwork: true".
-			cDefinesMap["HOST_NETNS_COOKIE"] = fmt.Sprintf("%d", cookie)
 		}
 	}
 
@@ -485,11 +468,6 @@ func (h *HeaderfileWriter) WriteEndpointConfig(w io.Writer, e endpoint.Config) e
 func (h *HeaderfileWriter) writeTemplateConfig(fw *bufio.Writer, e endpoint.Config) error {
 	if e.RequireRouting() {
 		fmt.Fprintf(fw, "#define ENABLE_ROUTING 1\n")
-	}
-
-	if e.IsHost() {
-		// Only used to differentiate between host endpoint template and other templates.
-		fmt.Fprintf(fw, "#define HOST_ENDPOINT 1\n")
 	}
 
 	// Local delivery metrics should always be set for endpoint programs.

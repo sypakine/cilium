@@ -163,7 +163,6 @@ linked, either choice is valid.
         CONFIG_NET_SCH_INGRESS=y
         CONFIG_DEBUG_INFO_BTF=y
         CONFIG_CRYPTO_SHA1=y
-        CONFIG_CRYPTO_USER_API_HASH=y
         CONFIG_CGROUPS=y
         CONFIG_CGROUP_BPF=y
         CONFIG_PERF_EVENTS=y
@@ -267,7 +266,6 @@ corresponds to requirements for GCM-128-AES.
         CONFIG_INET{,6}_IPCOMP=m
         CONFIG_INET{,6}_XFRM_TUNNEL=m
         CONFIG_INET{,6}_TUNNEL=m
-        CONFIG_INET_XFRM_MODE_TUNNEL=m
         CONFIG_CRYPTO_AEAD=m
         CONFIG_CRYPTO_AEAD2=m
         CONFIG_CRYPTO_GCM=m

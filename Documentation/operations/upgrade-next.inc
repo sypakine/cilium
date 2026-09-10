@@ -28,6 +28,10 @@ Informational Notes
   where they have no effect, to preserve Gateway API infrastructure metadata
   propagation. This prevents user-controlled infrastructure metadata from
   changing proxy and policy behavior.
+* The ``cilium-dbg preflight migrate-identity`` utility is deprecated and scheduled
+  for removal in a subsequent release. Refer to :ref:`kvstore_to_crd_migration` for
+  information on how to leverage the "Double Write" identity allocation mode to
+  migrate from KVStore to CRD identity allocation mode.
 
 Changes to Features
 ~~~~~~~~~~~~~~~~~~~
@@ -84,6 +88,9 @@ from Cilium.
   you passed ``--aws-use-primary-address`` directly on the operator, set
   ``eni.nodeSpec.usePrimaryAddress=true`` (equivalently, the
   ``--eni-use-primary-address`` agent flag) instead to retain the same behavior.
+* The previously deprecated ``clustermesh.apiserver.kvstoremesh.enabled`` helm
+  value has been removed, and KVStoreMesh is now unconditionally enabled when the
+  clustermesh-apiserver is enabled.
 
 Changes to Metrics
 ~~~~~~~~~~~~~~~~~~

@@ -83,21 +83,6 @@ type Reachable struct {
 	j Bitmap
 }
 
-func (r *Reachable) isLive(id uint64) bool {
-	if id >= r.blocks.count() {
-		return false
-	}
-	return r.l.Get(id)
-}
-
-func (r *Reachable) countAll() uint64 {
-	return r.blocks.count()
-}
-
-func (r *Reachable) countLive() uint64 {
-	return r.l.Popcount()
-}
-
 // Reachability determines whether or not each Block in blocks is reachable
 // given the variables.
 //
@@ -152,28 +137,47 @@ func Reachability(blocks Blocks, insns asm.Instructions, variables map[string]*e
 		return nil, fmt.Errorf("predicting blocks: %w", err)
 	}
 
-	// Always visit bpf2bpf callees since they are always reachable, on pre-6.8 kernels
-	for _, block := range blocks {
-		for _, called := range block.calls {
-			if err := r.visitBlock(called, vars); err != nil {
-				return nil, fmt.Errorf("predicting blocks: %w", err)
-			}
-		}
-	}
-
 	return r, nil
 }
 
-// Iterate returns an iterator that wraps an internal BlockIterator. The
+// Blocks returns an iterator over the blocks in the program, yielding each
+// block along with a boolean indicating whether the block is reachable.
+func (r *Reachable) Blocks() iter.Seq2[*Block, bool] {
+	return func(yield func(*Block, bool) bool) {
+		iter := r.blocks.iterate(r.insns)
+		for iter.NextBlock() {
+			live := r.l.Get(iter.block.id)
+			if !yield(iter.block, live) {
+				return
+			}
+		}
+	}
+}
+
+// Funcs returns an iterator over the functions in the program, yielding each
+// function's Blocks along with a boolean indicating whether the function is
+// reachable. A function is reachable if and only if its first block is, since
+// functions are only entered through calls to their entry blocks.
+func (r *Reachable) Funcs() iter.Seq2[Blocks, bool] {
+	return func(yield func(Blocks, bool) bool) {
+		for f := range r.blocks.funcs(r.insns) {
+			if !yield(f, r.l.Get(f.first().id)) {
+				return
+			}
+		}
+	}
+}
+
+// Instructions iterates instructions by wrapping an internal BlockIterator. The
 // internal iterator is yielded along with a bool indicating whether the current
 // instruction is reachable.
 //
-// The BlockIterator itself is yielded so it can be cloned to start a
-// backtracking session.
-func (r *Reachable) Iterate() iter.Seq2[*BlockIterator, bool] {
-	return func(yield func(*BlockIterator, bool) bool) {
+// The BlockIterator itself is yielded so it can be used to start a backtracking
+// session.
+func (r *Reachable) Instructions() iter.Seq2[*Iterator, bool] {
+	return func(yield func(*Iterator, bool) bool) {
 		iter := r.blocks.iterate(r.insns)
-		for iter.Next() {
+		for iter.NextInstruction() {
 			live := r.l.Get(iter.block.id)
 			if !yield(iter, live) {
 				return

@@ -50,6 +50,8 @@ func NodeConfig(lnc *Config) Node {
 
 	node.ClusterID = lnc.ClusterID
 	node.MonitorAggregation = uint8(option.Config.Opts.GetValue(option.MonitorAggregation))
+	node.MonitorReportInterval = uint32(option.Config.MonitorAggregationInterval.Seconds())
+	node.MonitorReportFlags = option.Config.MonitorAggregationFlags
 	node.TracePayloadLen = uint32(option.Config.TracePayloadlen)
 	node.TracePayloadLenOverlay = uint32(option.Config.TracePayloadlenOverlay)
 

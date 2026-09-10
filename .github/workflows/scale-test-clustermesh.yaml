@@ -63,7 +63,7 @@ env:
   # renovate: datasource=docker depName=google/cloud-sdk
   gcloud_version: 583.0.0
   # renovate: datasource=git-refs depName=https://github.com/cilium/scaffolding branch=main
-  cmapisrv_mock_ref: f0404412055eeaa82a8a38dad3fc5a4c95ba7ac4
+  cmapisrv_mock_ref: 810d87994a4608dfa64883e680aaf324c465de0a
 
   test_name: scale-clustermesh
   cluster_name: ${{ github.run_id }}-${{ github.run_attempt }}
@@ -350,8 +350,8 @@ jobs:
             printf "      port: 2379\n"
           done >> values-clustermesh-config.yaml
 
-          # * We enable KVStoreMesh only at this point to leverage the bootstrap QPS
-          #   and speed-up the overall bootstrap process.
+          # * We enable the ClusterMesh API server only at this point to leverage
+          #   the bootstrap QPS and speed-up the overall bootstrap process.
           # * Increase the KVStoreMesh QPS to match the ones of the cmapisrv-mock,
           #   as not a problem considering the limited number of watchers.
           # * Store etcd data directly in memory, for improved performance.
@@ -360,7 +360,6 @@ jobs:
             --chart-directory=untrusted/install/kubernetes/cilium \
             --set clustermesh.useAPIServer=true \
             --set clustermesh.apiserver.etcd.storageMedium=Memory \
-            --set clustermesh.apiserver.kvstoremesh.enabled=true \
             --set clustermesh.apiserver.kvstoremesh.extraArgs[0]=--kvstore-opt=etcd.qps=1000 \
             --set clustermesh.apiserver.nodeSelector.node-role\\.kubernetes\\.io/control-plane= \
             --set clustermesh.apiserver.tolerations[0].key=node-role.kubernetes.io/control-plane \

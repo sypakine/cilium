@@ -6,12 +6,14 @@ package analyze
 import (
 	"encoding/binary"
 	"io"
+	"iter"
 	"math"
 	"structs"
 	"testing"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/asm"
+	"github.com/cilium/ebpf/btf"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -38,7 +40,7 @@ func symbols(insns asm.Instructions) map[string]struct{} {
 
 // eachLiveRef calls fn for each live symbol reference appearing in r.
 func eachLiveRef(r *Reachable, fn func(ref string)) {
-	for iter, live := range r.Iterate() {
+	for iter, live := range r.Instructions() {
 		if !live {
 			continue
 		}
@@ -52,17 +54,26 @@ func eachLiveRef(r *Reachable, fn func(ref string)) {
 	}
 }
 
+func isLive(r *Reachable, id uint64) bool {
+	return r.l.Get(id)
+}
+
+func countAll(r *Reachable) uint64 {
+	return r.blocks.count()
+}
+
+func countLive(r *Reachable) uint64 {
+	return r.l.Popcount()
+}
+
 // allUnreachable asserts that all symbols appearing in insns are marked
-// unreachable in r, except for sym_i, which should never be marked
-// unreachable.
+// unreachable in r.
 func allUnreachable(t *testing.T, insns asm.Instructions, r *Reachable) {
 	t.Helper()
 
 	syms := symbols(insns)
 	eachLiveRef(r, func(ref string) {
-		if ref != "sym_i" {
-			assert.Nil(t, syms[ref], "symbol %q should be unreachable", ref)
-		}
+		assert.Nil(t, syms[ref], "symbol %q should be unreachable", ref)
 	})
 }
 
@@ -179,13 +190,13 @@ func TestReachabilityBacktrackBlock(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.EqualValues(t, 5, r.countAll())
-	assert.NotEqual(t, r.countAll(), r.countLive())
-	assert.True(t, r.isLive(0))
-	assert.True(t, r.isLive(1))
-	assert.False(t, r.isLive(2))
-	assert.True(t, r.isLive(3))
-	assert.True(t, r.isLive(4))
+	assert.EqualValues(t, 5, countAll(r))
+	assert.NotEqual(t, countAll(r), countLive(r))
+	assert.True(t, isLive(r, 0))
+	assert.True(t, isLive(r, 1))
+	assert.False(t, isLive(r, 2))
+	assert.True(t, isLive(r, 3))
+	assert.True(t, isLive(r, 4))
 }
 
 // This tests asserts that we do basic block analysis and dead code elimination
@@ -230,11 +241,11 @@ func TestReachabilityLongJump(t *testing.T) {
 	// 1: dead, since it is skipped by the first branch
 	// 2: live, we've determined the first branch is always taken
 	// 3: dead, since it's the target of the long jump that is never taken
-	assert.NotEqual(t, disabled.countAll(), disabled.countLive())
-	assert.True(t, disabled.isLive(0))
-	assert.False(t, disabled.isLive(1))
-	assert.True(t, disabled.isLive(2))
-	assert.False(t, disabled.isLive(3))
+	assert.NotEqual(t, countAll(disabled), countLive(disabled))
+	assert.True(t, isLive(disabled, 0))
+	assert.False(t, isLive(disabled, 1))
+	assert.True(t, isLive(disabled, 2))
+	assert.False(t, isLive(disabled, 3))
 
 	enabled, err := Reachability(blocks, insns, map[string]*ebpf.VariableSpec{
 		"enable_a": {SectionName: ".rodata", Offset: 0, Value: []byte{1}},
@@ -246,11 +257,82 @@ func TestReachabilityLongJump(t *testing.T) {
 	// 1: live, we've determined the first branch insn is never taken
 	// 2: dead, the long jump is taken
 	// 3: live, target of the long jump
-	assert.NotEqual(t, enabled.countAll(), enabled.countLive())
-	assert.True(t, enabled.isLive(0))
-	assert.True(t, enabled.isLive(1))
-	assert.False(t, enabled.isLive(2))
-	assert.True(t, enabled.isLive(3))
+	assert.NotEqual(t, countAll(enabled), countLive(enabled))
+	assert.True(t, isLive(enabled, 0))
+	assert.True(t, isLive(enabled, 1))
+	assert.False(t, isLive(enabled, 2))
+	assert.True(t, isLive(enabled, 3))
+}
+
+func TestReachableFuncs(t *testing.T) {
+	fn := func(ins asm.Instruction, name string) asm.Instruction {
+		return btf.WithFuncMetadata(ins.WithSymbol(name), &btf.Func{Name: name})
+	}
+
+	insns := asm.Instructions{
+		// prog calls live, but never dead.
+		fn(asm.Call.Label("live"), "prog"),
+		asm.Return(),
+
+		// live spans multiple blocks; "ret" is a jump label, not a function.
+		fn(asm.JEq.Imm(asm.R1, 0, "ret"), "live"),
+		asm.Mov.Imm(asm.R0, 1),
+		asm.Return().WithSymbol("ret"),
+
+		// dead has no callers and contains a double-wide instruction.
+		fn(asm.LoadImm(asm.R0, 0, asm.DWord), "dead"),
+		asm.Return(),
+	}
+
+	// Marshal instructions to fix up references.
+	require.NoError(t, insns.Marshal(io.Discard, binary.LittleEndian))
+
+	blocks, err := computeBlocks(insns)
+	require.NoError(t, err)
+
+	r, err := Reachability(blocks, insns, nil)
+	require.NoError(t, err)
+
+	next, stop := iter.Pull2(r.Funcs())
+	defer stop()
+
+	f, l, ok := next()
+	require.True(t, ok)
+	assert.Equal(t, "prog", f.Name())
+	assert.True(t, l)
+	assert.Len(t, f, 1)
+
+	f, l, ok = next()
+	require.True(t, ok)
+	assert.Equal(t, "live", f.Name())
+	assert.True(t, l)
+	assert.Len(t, f, 3)
+
+	f, l, ok = next()
+	require.True(t, ok)
+	assert.Equal(t, "dead", f.Name())
+	assert.False(t, l)
+	assert.Len(t, f, 1)
+
+	_, _, ok = next()
+	assert.False(t, ok)
+
+	// Func-relative indices with pointers into the original insns.
+	nextIns, stopIns := iter.Pull2(f.Instructions(insns))
+	defer stopIns()
+
+	i, ins, ok := nextIns()
+	require.True(t, ok)
+	assert.Equal(t, 0, i)
+	assert.Same(t, &insns[5], ins)
+
+	i, ins, ok = nextIns()
+	require.True(t, ok)
+	assert.Equal(t, 1, i)
+	assert.Same(t, &insns[6], ins)
+
+	_, _, ok = nextIns()
+	assert.False(t, ok)
 }
 
 // Test that Reachability can be called concurrently. This is a regression test

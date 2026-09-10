@@ -30,10 +30,7 @@ Enable the Hubble UI by running the following command:
 
 .. tabs::
 
-    .. group-tab:: Cilium CLI 
-
-        If Hubble is already enabled with ``cilium hubble enable``, you must first temporarily disable Hubble with ``cilium hubble disable``.
-        This is because the Hubble UI cannot be added at runtime.
+    .. group-tab:: Cilium CLI
 
         .. code-block:: shell-session
 
@@ -155,9 +152,9 @@ some traffic.
 
 .. code-block:: shell-session
 
-    $ kubectl exec xwing -- curl -s -XPOST deathstar.default.svc.cluster.local/v1/request-landing
+    $ kubectl exec xwing -- curl -s -XPOST deathstar/v1/request-landing
     Ship landed
-    $ kubectl exec tiefighter -- curl -s -XPOST deathstar.default.svc.cluster.local/v1/request-landing
+    $ kubectl exec tiefighter -- curl -s -XPOST deathstar/v1/request-landing
     Ship landed
 
 These requests will then be displayed in the UI as service dependencies between
